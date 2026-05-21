@@ -60,7 +60,21 @@ if ! coolify_load_server "$SERVER"; then
 fi
 doppler_load_account "$SERVER"
 
-echo "validate: server alias '$SERVER' -> $COOLIFY_URL (doppler account: $DOPPLER_ACCOUNT)"
+# Verify ssh_host is set in the coolify.json server entry (required by provision.sh)
+SSH_HOST_CHECK=$(python3 -c "
+import json
+d=json.load(open('$HOME/.claude/coolify.json'))
+print(d.get('servers',{}).get('$SERVER',{}).get('ssh_host',''))
+")
+if [ -z "$SSH_HOST_CHECK" ]; then
+  fail "INVALID:coolify.json:servers.$SERVER.ssh_host (missing — required by provision.sh)"
+  echo "" >&2
+  echo "Add ssh_host to ~/.claude/coolify.json. Example:" >&2
+  echo "  \"$SERVER\": { ..., \"ssh_host\": \"v_cicd_stream\" }" >&2
+  exit 1
+fi
+
+echo "validate: server alias '$SERVER' -> $COOLIFY_URL (doppler account: $DOPPLER_ACCOUNT, ssh_host: $SSH_HOST_CHECK)"
 
 # Verify Coolify API reachable
 if ! coolify_curl GET "/projects" >/dev/null 2>&1; then

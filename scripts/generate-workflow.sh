@@ -4,7 +4,7 @@
 #
 # build.context and build.dockerfile are read from coolify.yaml.
 # Defaults: context = '.' (repo root), dockerfile = './Dockerfile'.
-# For nested-app repos (e.g. ai-upskilling/skillmap), set build.context: ./skillmap in coolify.yaml.
+# For nested-app repos (e.g. ai-upskilling/skillmap), set build.context in coolify.yaml (e.g. ./skillmap).
 #
 # IMPORTANT — no env-specific --build-arg is passed.
 # The whole point of same-image promotion is that staging and production run the
