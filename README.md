@@ -164,6 +164,29 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 
 ---
 
+## E2E integration test
+
+`test/e2e.sh` exercises the full skill against your real infrastructure — creates a throwaway Coolify project + Doppler project, provisions staging + production apps, deploys a hello-world container, smoke-tests the live staging URL, and cleans up unconditionally via a `trap`.
+
+**One-time setup** (build and push the test image to GHCR — needs a PAT with `write:packages` scope):
+
+```bash
+export GHCR_TOKEN=ghp_...    # github.com/settings/tokens/new → write:packages
+bash test/push-hello-world.sh
+```
+
+**Run the test** (~3-5 minutes):
+
+```bash
+bash test/e2e.sh                              # uses first server in ~/.claude/coolify.json
+bash test/e2e.sh --server hetzner-strategem  # test a different server alias
+bash test/e2e.sh --keep                      # skip cleanup (debug failures)
+```
+
+The test exercises `validate.sh` → `provision.sh` → deploy trigger → deployment API polling → HTTPS smoke test (`/api/health` HTTP 200 + body check). If any step fails, cleanup still runs. See `test/hello-world/` for the nginx:alpine test container (port 3000, `/api/health` endpoint).
+
+---
+
 ## See also
 
 - [Architecture & setup flow diagrams](./docs/architecture.md)
