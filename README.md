@@ -4,6 +4,8 @@ Coolify + Doppler deployment skills for Claude Code. One command bootstraps any 
 
 **Status:** Production-ready for the reference implementation (skillmap on Vultr / streamlinity.com). Designed for multi-domain reuse via fork.
 
+> **New here?** See **[docs/architecture.md](./docs/architecture.md)** for a diagram showing the two repos, three services, and how they connect — before diving into the setup steps below.
+
 ---
 
 ## What you get
@@ -164,6 +166,7 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 
 ## See also
 
+- [Architecture & setup flow diagrams](./docs/architecture.md)
 - [Schema reference](./docs/schema.md)
 - [Per-domain setup guide](./docs/setup-guide.md)
 - [Fork guide (strategem.ai example)](./docs/fork-guide.md)
