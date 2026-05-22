@@ -65,10 +65,10 @@ annotation to change provisioning behaviour today.
 ## init flow
 
 Interactive prompts:
-- Server alias to add (string, e.g. `vultr-stream`)
-- Coolify URL (e.g. `https://coolify.cicd.streamlinity.com`)
+- Server alias to add (string, e.g. `my-server`)
+- Coolify URL (e.g. `https://coolify.example.com`)
 - API key (paste — token displayed once in Coolify UI)
-- Doppler account name (e.g. `streamlinity`)
+- Doppler account name (e.g. `my-doppler-account`)
 
 Merge into `~/.claude/coolify.json` (preserve existing servers). `chmod 0600`.
 
@@ -79,4 +79,4 @@ Runs `bash $HOME/.claude/skills/setup-coolify/scripts/validate.sh`. See the scri
 ## See also
 
 - `~/.claude/skills/setup-coolify/references/api-reference.md` — Coolify + Doppler API endpoint reference
-- `.planning/codebase/COOLIFY_YAML_SCHEMA.md` (in the repo) — schema documentation, including the reserved `build_time: true` annotation
+- `docs/schema.md` (in the repo) — `coolify.yaml` and `coolify.json` schema reference, including the reserved `build_time: true` annotation
