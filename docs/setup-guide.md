@@ -282,6 +282,106 @@ git push
 
 ---
 
+## Step 8: Run the E2E integration test
+
+The E2E test exercises the full skill end-to-end against your real infrastructure: it
+creates a throwaway Coolify project + Doppler project, provisions staging and production
+apps, deploys a hello-world container, and smoke-tests the live HTTPS URL. Run this once
+after Step 7 to confirm your setup is correct before using the skill on a real repo.
+
+The workflow has three phases: **run → inspect → cleanup.**
+
+---
+
+### Prerequisites for E2E
+
+Before the test can run, the hello-world test image must exist in GHCR. This is a
+one-time setup covered in [Step 6b](#step-6b-store-ghcr_token-for-local-e2e-testing).
+If you completed Step 6b, you are ready.
+
+Your server alias must be set (passed as `--server` or via `E2E_SERVER`), and a base
+domain for throwaway subdomains must be reachable from the VPS (the test creates
+`<test-project>-staging.<base-domain>` automatically).
+
+---
+
+### Phase 1: Run
+
+```bash
+E2E_SERVER=<alias> bash test/e2e.sh
+```
+
+Replace `<alias>` with the server alias key from `~/.claude/coolify.json` (e.g.
+`vultr-stream`). The base domain defaults to the `base_domain` configured for that
+server; override it with `E2E_BASE_DOMAIN=ci.example.com` if needed.
+
+The test (~3-5 minutes) runs these steps in order:
+1. Verifies prerequisites (Coolify API reachable, Doppler CLI authenticated, test image pullable)
+2. Creates a throwaway Doppler project (`csd-e2e-YYYYMMDDHHMMSS`) with `stg`/`prd` configs
+3. Generates a temporary `coolify.yaml` pointing at the throwaway project
+4. Runs `validate.sh` (dry-run check)
+5. Runs `provision.sh` (creates Coolify project + staging + production apps, wires Doppler tokens)
+6. Triggers a staging deploy and polls until the container is running
+7. Triggers a production deploy
+8. Smoke-tests the staging HTTPS URL (`/api/health` → HTTP 200 + body check)
+9. Writes a JSON report to `test/results/YYYYMMDDHHMMSS.json`
+
+**On success:** staging and production apps are left running. The staging URL is printed.
+A report file is written — this is the handoff to cleanup (see Phase 3).
+
+**On failure:** all resources are torn down automatically via `trap EXIT`. The report is
+written regardless of outcome. Use `--keep` to suppress failure teardown if you want to
+inspect the broken state manually.
+
+---
+
+### Phase 2: Inspect
+
+After a successful run, open the staging URL printed in the terminal output:
+
+```
+https://<test-project>-staging.<base-domain>/api/health   → 200 OK
+https://<test-project>-staging.<base-domain>/             → hello-world page
+```
+
+This confirms the full provision → deploy → HTTPS loop works against your actual
+Coolify instance. Take a moment to verify in Coolify UI that both the staging and
+production apps appear in the throwaway project with a green running status.
+
+---
+
+### Phase 3: Cleanup
+
+When you are done inspecting, run the cleanup script using the report file written in
+Phase 1:
+
+```bash
+bash test/cleanup-deployment.sh test/results/YYYYMMDDHHMMSS.json
+```
+
+Use the actual filename from `test/results/` — it is also printed at the end of the
+test run output.
+
+**How the handoff works:** `test/e2e.sh` writes a JSON report containing every
+identifier the cleanup script needs — Coolify project UUID, staging and production app
+UUIDs, SSH host alias, Doppler project slug, and server alias. The cleanup script reads
+this file and requires nothing else. You do not need to look up any IDs manually.
+
+**What cleanup deletes** (in dependency order):
+
+| Resource | How |
+|----------|-----|
+| Staging app | Coolify API DELETE `/applications/<uuid>` |
+| Production app | Coolify API DELETE `/applications/<uuid>` |
+| Coolify project | Coolify API DELETE `/projects/<uuid>` (retried up to 3× after apps clear) |
+| Docker volumes (×2) | SSH to VPS: `docker volume rm <app-uuid>-doppler-cache` |
+| Doppler project | `doppler projects delete <slug>` |
+
+The cleanup script prints a confirmation block listing everything it deleted and exits
+0. It is idempotent — safe to re-run if interrupted.
+
+---
+
 ## Verifying success
 
 1. **Check the GitHub Actions workflow was registered:**

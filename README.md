@@ -206,9 +206,9 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 
 `test/e2e.sh` exercises the full skill against your real infrastructure — creates a throwaway Coolify project + Doppler project, provisions staging + production apps, deploys a hello-world container, and smoke-tests the live staging URL.
 
-**Success behaviour:** on a clean run, staging and production apps are left running so you can inspect the live deployment. A JSON report is written to `test/results/YYYYMMDD-HHMMSS.json` on every run (pass or fail). Run cleanup when ready: `bash test/cleanup-deployment.sh <report-file>`.
+The test runs in three phases: **run → inspect → cleanup.** Each phase hands off to the next via a JSON report file.
 
-**Failure behaviour:** cleanup (teardown of all Coolify + Doppler resources) runs automatically via `trap EXIT`. Use `--keep` to suppress teardown and inspect the failure state manually.
+### Phase 1: Run the test
 
 **One-time setup** (build and push the test image to GHCR — needs a PAT with `write:packages` scope):
 
@@ -217,17 +217,50 @@ export GHCR_TOKEN=ghp_...    # github.com/settings/tokens/new → write:packages
 bash test/push-hello-world.sh
 ```
 
-**Run the test** (~3-5 minutes):
+**Run** (~3-5 minutes):
 
 ```bash
-bash test/e2e.sh                                  # default server (vultr-stream) + domain (cicd.streamlinity.com)
-bash test/e2e.sh --server hetzner-strategem       # test a different server alias
-bash test/e2e.sh --keep                           # skip cleanup on failure (debug)
-E2E_SERVER=other-alias bash test/e2e.sh           # override server via env var
-E2E_BASE_DOMAIN=ci.example.com bash test/e2e.sh  # override base domain
+E2E_SERVER=<alias> bash test/e2e.sh                        # required: server alias from ~/.claude/coolify.json
+E2E_SERVER=<alias> E2E_BASE_DOMAIN=ci.example.com bash test/e2e.sh  # custom base domain
+bash test/e2e.sh --server <alias>                          # equivalent flag form
+bash test/e2e.sh --server <alias> --keep                   # skip cleanup on failure (debug)
 ```
 
-The test exercises `validate.sh` → `provision.sh` → deploy trigger → deployment API polling → HTTPS smoke test (`/api/health` HTTP 200 + body check). If any step fails, cleanup runs and a report is still written. See `test/hello-world/` for the nginx:alpine test container (port 3000, `/api/health` endpoint).
+The test exercises `validate.sh` → `provision.sh` → deploy trigger → deployment API polling → HTTPS smoke test (`/api/health` HTTP 200 + body check).
+
+**On success:** staging and production apps are left running. A report file is written to `test/results/YYYYMMDDHHMMSS.json`. The staging URL is printed at the end — open it in a browser to confirm the hello-world deployment is live.
+
+**On failure:** all Coolify + Doppler resources are torn down automatically via `trap EXIT`. Use `--keep` to suppress teardown and inspect the failure state manually. The report is written regardless of outcome.
+
+### Phase 2: Inspect
+
+After a successful run, the deployment is live. Browse to the staging URL printed in the output:
+
+```
+https://<test-project>-staging.<your-base-domain>/api/health   → 200 OK
+https://<test-project>-staging.<your-base-domain>/             → hello-world page
+```
+
+This is your proof that the full provision → deploy → health-check loop works end-to-end against real infrastructure.
+
+### Phase 3: Cleanup
+
+When you are done inspecting, run the cleanup script with the report file from Phase 1:
+
+```bash
+bash test/cleanup-deployment.sh test/results/YYYYMMDDHHMMSS.json
+```
+
+**What the report contains (the handoff):** `test/e2e.sh` writes a JSON file containing every identifier needed to tear down the test run — the Coolify project UUID, staging and production app UUIDs, Docker volume naming root, Doppler project slug, server alias, and SSH host. The cleanup script reads this file and requires nothing else from the operator.
+
+**What cleanup deletes** (in order, to satisfy Coolify's dependency rules):
+1. Staging app (Coolify DELETE `/applications/<uuid>`)
+2. Production app (Coolify DELETE `/applications/<uuid>`)
+3. Coolify project (retried up to 3× after apps are removed)
+4. Docker volumes on the VPS via SSH (`<app-uuid>-doppler-cache` × 2)
+5. Doppler project (`doppler projects delete <slug>`)
+
+The cleanup script is idempotent — re-running it against the same report is safe even if some resources were already deleted.
 
 ---
 
