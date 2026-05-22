@@ -70,15 +70,78 @@ SSH_HOST=""
 PASS=0
 FAIL=0
 RESULTS=()
+REPORT_FILE=""
 
 pass() { PASS=$((PASS+1)); RESULTS+=("  ✓ $*"); echo "  ✓ $*"; }
 fail() { FAIL=$((FAIL+1)); RESULTS+=("  ✗ $*"); echo "  ✗ $*" >&2; }
 step() { echo ""; echo "=== $* ==="; }
 
+# ── Report writer (called once from main body; cleanup() calls if not yet written) ─
+
+write_report() {
+  # No-op if already written (idempotency across success path + trap path).
+  [ -n "$REPORT_FILE" ] && [ -f "$REPORT_FILE" ] && return 0
+
+  local report_dir="$SKILL_DIR/test/results"
+  mkdir -p "$report_dir"
+  REPORT_FILE="$report_dir/${TIMESTAMP}.json"
+
+  python3 - \
+    "$REPORT_FILE" \
+    "$STAGING_DOMAIN" \
+    "${COOLIFY_PROJECT_UUID:-}" \
+    "${STG_APP_UUID:-}" \
+    "${PRD_APP_UUID:-}" \
+    "$TIMESTAMP" \
+    "$SERVER_ALIAS" \
+    "${RESULTS[@]+"${RESULTS[@]}"}" \
+    <<'PY'
+import sys, json
+from datetime import datetime, timezone
+
+args = sys.argv[1:]
+report_file = args[0]
+staging_url = "https://" + args[1] if args[1] else ""
+project_uuid = args[2]
+staging_app_uuid = args[3]
+production_app_uuid = args[4]
+ts_raw = args[5]
+server_alias = args[6]
+result_lines = args[7:]
+
+run_timestamp = datetime.strptime(ts_raw, "%Y%m%d%H%M%S").replace(
+    tzinfo=timezone.utc).isoformat()
+
+steps = []
+for line in result_lines:
+    s = line.strip()
+    passed = s.startswith("✓")
+    # Strip leading mark + spaces
+    name = s.lstrip("✓✗").strip()
+    steps.append({"name": name, "passed": passed, "detail": ""})
+
+report = {
+    "run_timestamp": run_timestamp,
+    "server_alias": server_alias,
+    "staging_url": staging_url,
+    "project_uuid": project_uuid,
+    "staging_app_uuid": staging_app_uuid,
+    "production_app_uuid": production_app_uuid,
+    "steps": steps,
+}
+
+with open(report_file, "w") as f:
+    json.dump(report, f, indent=2)
+PY
+
+  echo "  report written: $REPORT_FILE"
+}
+
 # ── Cleanup (runs on failure via EXIT trap; skipped on success) ─────────────────
 
 cleanup() {
   local exit_code=$?
+  write_report || true
   echo ""
   echo "═══════════════════════════════════"
   echo " Test Results"
@@ -466,6 +529,25 @@ else
   echo "  This may be a Let's Encrypt cert delay. The deploy itself finished successfully."
   echo "  Verify manually: curl https://${STAGING_DOMAIN}/api/health"
 fi
+
+# ── Write test report ─────────────────────────────────────────────────────────
+
+step "Write test report"
+write_report
+
+# ── Completion summary (success path) ─────────────────────────────────────────
+
+echo ""
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo " Deployment complete"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo "  Staging URL    : https://${STAGING_DOMAIN}"
+echo "  Production URL : https://${PROD_DOMAIN}"
+echo "  Report         : $REPORT_FILE"
+echo ""
+echo "  Next step — clean up when ready:"
+echo "    bash test/cleanup-deployment.sh $REPORT_FILE"
+echo "═══════════════════════════════════════════════════════════════════════════════"
 
 # ── Done ───────────────────────────────────────────────────────────────────────
 # Cleanup runs via trap EXIT
