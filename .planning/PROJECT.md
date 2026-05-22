@@ -15,6 +15,10 @@ A developer can clone this repo, run one command, see a working hello-world depl
 - ✓ Fix `generate-workflow.sh`: `needs: [deploy-staging, build]` + smoke URL `/api/health` — Validated in Phase 01: bug-fixes
 - ✓ Fix `provision.sh`: Doppler `returncode` check, hard-fail with per-key error — Validated in Phase 01: bug-fixes
 - ✓ Fix `provision.sh`: `server_name` read from `coolify.json` (default `localhost`) — Validated in Phase 01: bug-fixes
+- ✓ `test/e2e.sh` fails fast with actionable error when `E2E_SERVER`/`E2E_BASE_DOMAIN` unset (ONBOARD-01, ONBOARD-02) — Validated in Phase 02.1: new-user-onboarding
+- ✓ `SKILL.md` accurately describes provision flow (no dead-code refs, no false deploy claims, generic examples) (ONBOARD-03, ONBOARD-04, ONBOARD-05) — Validated in Phase 02.1: new-user-onboarding
+- ✓ `README.md` opens with 5-command Quick start above Prerequisites (ONBOARD-06) — Validated in Phase 02.1: new-user-onboarding
+- ✓ `references/api-reference.md` uses placeholders, no maintainer-specific domains (ONBOARD-07) — Validated in Phase 02.1: new-user-onboarding
 - ✓ Idempotent Coolify provisioning via `/setup-coolify` — existing
 - ✓ Dry-run pre-flight validation via `/setup-coolify validate` — existing
 - ✓ Interactive repo bootstrap via `bash init/init.sh` (writes `coolify.yaml` + `deploy.yml`) — existing
@@ -67,6 +71,8 @@ A developer can clone this repo, run one command, see a working hello-world depl
 | `workflow_dispatch` CI job (`push-test-image.yml`) for test image | Zero-PAT path for forkers — uses `GITHUB_TOKEN` with `packages: write`; no separate credential needed | Validated — Phase 02 setup |
 
 ## Evolution
+
+**Current state:** Phase 02.1 complete — new-user onboarding friction resolved. Next: Phase 03 (cleanup-script).
 
 This document evolves at phase transitions and milestone boundaries.
 
