@@ -19,6 +19,7 @@ A developer can clone this repo, run one command, see a working hello-world depl
 - ✓ `SKILL.md` accurately describes provision flow (no dead-code refs, no false deploy claims, generic examples) (ONBOARD-03, ONBOARD-04, ONBOARD-05) — Validated in Phase 02.1: new-user-onboarding
 - ✓ `README.md` opens with 5-command Quick start above Prerequisites (ONBOARD-06) — Validated in Phase 02.1: new-user-onboarding
 - ✓ `references/api-reference.md` uses placeholders, no maintainer-specific domains (ONBOARD-07) — Validated in Phase 02.1: new-user-onboarding
+- ✓ `test/cleanup-deployment.sh` — report-driven teardown of Coolify apps + project + Docker volumes + Doppler project (CLEAN-01, CLEAN-02) — Validated in Phase 03: cleanup-script
 - ✓ Idempotent Coolify provisioning via `/setup-coolify` — existing
 - ✓ Dry-run pre-flight validation via `/setup-coolify validate` — existing
 - ✓ Interactive repo bootstrap via `bash init/init.sh` (writes `coolify.yaml` + `deploy.yml`) — existing
@@ -32,8 +33,7 @@ A developer can clone this repo, run one command, see a working hello-world depl
 
 ### Active
 
-**Cleanup script (Phase 3):**
-- [ ] Add `test/cleanup-deployment.sh` — separate teardown script for hello-world deployment; reads app IDs from JSON test report
+_(no active requirements — all phases complete)_
 
 ### Out of Scope
 
@@ -64,6 +64,7 @@ A developer can clone this repo, run one command, see a working hello-world depl
 |----------|-----------|---------|
 | Static workflow validation instead of live GitHub Actions run | Avoids external dependency, catches structural bugs fast (like the `smoke-staging` job name bug) | Validated — Phase 02 complete (`test/validate-workflow.sh`) |
 | No auto-cleanup in E2E test on success | New users need to see the deployed result to build trust in the skill | Validated — Phase 02 complete (cleanup skipped when exit_code=0) |
+| `test/cleanup-deployment.sh` reads from JSON report file | Decouples teardown from e2e.sh; operator can inspect deployment first then run cleanup explicitly | Validated — Phase 03 complete |
 | Fix HIGH bugs before building test framework | E2E test would fail for the wrong reasons if workflow generation is broken | Validated — Phase 01 complete |
 | `E2E_BASE_DOMAIN` + `E2E_SERVER` env vars for portability | Allows domain fork developers to run the same test against their Coolify server without editing the script | Validated — Phase 02 complete |
 | Test report written to `test/results/` | Persists pass/fail state and URLs between test run and cleanup; enables maintainer CI assertions | Validated — Phase 02 complete (JSON report, written on pass and fail) |
@@ -72,7 +73,7 @@ A developer can clone this repo, run one command, see a working hello-world depl
 
 ## Evolution
 
-**Current state:** Phase 02.1 complete — new-user onboarding friction resolved. Next: Phase 03 (cleanup-script).
+**Current state:** Phase 03 complete — milestone v1.0 fully executed. All requirements validated. Human verification (live E2E teardown) pending real infrastructure run.
 
 This document evolves at phase transitions and milestone boundaries.
 
@@ -90,4 +91,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — Phase 02: test-framework complete*
+*Last updated: 2026-05-22 — Phase 03: cleanup-script complete (milestone v1.0 done)*
