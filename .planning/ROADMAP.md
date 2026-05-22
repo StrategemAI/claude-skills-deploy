@@ -87,5 +87,5 @@ deployment on their Coolify server.
 |-------|----------------|--------|-----------|
 | 1. Bug Fixes | 2/3 | In Progress|  |
 | 2. Test Framework | 1/2 | In Progress|  |
-| 02.1. new-user-onboarding | 4/4 | Complete   | 2026-05-22 |
+| 02.1. new-user-onboarding | 4/4 | Complete    | 2026-05-22 |
 | 3. Cleanup Script | 0/1 | Not started | - |
