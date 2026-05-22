@@ -1,0 +1,185 @@
+# Coding Conventions
+
+**Analysis Date:** 2026-05-21
+
+## Shell Script Style
+
+**Shebang:**
+- All scripts use `#!/usr/bin/env bash` (never `/bin/bash`)
+
+**Strict mode:**
+- All scripts open with `set -euo pipefail` — no exceptions
+- Library files (`lib-*.sh`) also set this despite being sourced
+
+**File header comments:**
+- Every script opens with a `# filename — one-line purpose` comment on line 2
+- Multi-line preamble blocks document: purpose, usage, prerequisites, important notes
+- Example from `scripts/generate-workflow.sh`:
+  ```bash
+  # generate-workflow.sh — Emit .github/workflows/deploy.yml from coolify.yaml.
+  # Implements GHCR same-image promotion. Smoke test is the gate...
+  # IMPORTANT — no env-specific --build-arg is passed.
+  ```
+
+**Script self-location:**
+- All scripts resolve their own directory using:
+  ```bash
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ```
+- Top-level scripts in subdirectories (e.g. `init/init.sh`) use `..` to reach `SKILL_DIR`:
+  ```bash
+  SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  ```
+- All downstream paths are absolute, derived from these variables — never relative
+
+## Naming Patterns
+
+**Scripts:**
+- Core executables: `verb.sh` (`provision.sh`, `validate.sh`, `generate-workflow.sh`)
+- Shared libraries: `lib-noun-api.sh` (`lib-coolify-api.sh`, `lib-doppler-api.sh`)
+- Test files: `test_noun.sh` for unit-style tests (`init/test_init.sh`), `noun.sh` for integration tests (`test/e2e.sh`)
+- Helper scripts: `verb-noun.sh` (`push-hello-world.sh`)
+
+**Functions:**
+- Library functions: `noun_verb` or `noun_verb_noun` with the service as prefix
+  - `coolify_load_server`, `coolify_curl`, `coolify_upsert_project`, `coolify_find_app_by_name`
+  - `doppler_load_account`, `doppler_check_key`, `doppler_create_service_token`
+- Test helper functions (in test scripts): lowercase short names — `pass()`, `fail()`, `step()`
+
+**Variables:**
+- Global configuration: `SCREAMING_SNAKE_CASE` (`COOLIFY_URL`, `DOPPLER_ACCOUNT`, `SERVER_ALIAS`)
+- Local variables in functions: `local lower_snake_case`
+- Loop variables: `UPPER_SNAKE_CASE` when they derive from config, `lower_snake_case` otherwise
+- UUID variables: `NOUN_UUID` suffix (`APP_UUID`, `PROJECT_UUID`, `SERVER_UUID`)
+- Timestamp/counters in tests: `PASS`, `FAIL`, `RESULTS`
+
+**Template tokens:**
+- Double-brace `{{UPPER_SNAKE_CASE}}` in `.tmpl` files (`{{PROJECT}}`, `{{SERVER}}`, `{{ENV_VARS_LIST}}`)
+
+## Error Handling
+
+**Pattern: fail-fast with context**
+- `exit 1` after every `echo "ERROR: ..." >&2` line
+- Error messages always name the offending field: `"ERROR: $YAML_PATH not found"`, not `"file not found"`
+- `validate.sh` collects errors via an `ERRORS` counter and `fail()` function before early exit:
+  ```bash
+  fail() { echo "FAIL: $*" >&2; ERRORS=$((ERRORS+1)); }
+  ```
+- `provision.sh` and `init.sh` abort immediately on first error (no accumulation)
+
+**Return codes from library functions:**
+- `doppler_check_key` uses return code `2` to distinguish placeholder values from missing keys — non-zero means failure, `2` specifically means "present but `TODO_REPLACE_BEFORE_DEPLOY`"
+
+**Graceful degradation:**
+- Non-critical failures use `|| true` to continue: `doppler_cmd ... || true`
+- Optional API calls use `2>/dev/null || echo ""` fallback pattern
+
+## Python Inline Scripting
+
+**When to use Python inline:**
+- YAML parsing (PyYAML, never shell text munging for YAML)
+- JSON manipulation
+- Multi-field extraction from structured data
+
+**Pattern: `eval "$(python3 -c "...")"` for variable extraction:**
+```bash
+eval "$(python3 -c "
+import yaml
+d=yaml.safe_load(open('$YAML_PATH'))
+print(f\"PROJECT='{d.get('project','')}'\")
+")"
+```
+
+**Pattern: heredoc Python for longer inline scripts:**
+```bash
+python3 - "$ARG1" "$ARG2" <<'PY'
+import sys
+# ... multi-line logic
+PY
+```
+
+**Template rendering:**
+- `init.sh` uses Python for template rendering (not `sed`) to handle multiline values robustly — see `init/init.sh` lines 93-116
+
+## YAML Conventions
+
+**coolify.yaml field order:**
+1. `project`
+2. `server`
+3. `doppler_project`
+4. `registry` (with `image`, `retention_tags`)
+5. `build` (with `context`, `dockerfile`)
+6. `environments` (with `staging`, `production` each having `domain`, `doppler_environment`)
+7. `env_vars` (flat list, no values — keys only)
+8. `coolify_app_ids` (auto-filled, `~` until provisioned)
+
+**Comments in YAML template (`coolify.yaml.tmpl`):**
+- Every field has a `# CHANGE:` or `# LEAVE:` prefix comment explaining intent
+- Multiline explanations use multiple `#` lines above the key
+- Template uses `{{DOUBLE_BRACE}}` tokens, not `$SHELL` interpolation
+
+**YAML safety:**
+- All generated YAML is validated with `python3 -c "import yaml; yaml.safe_load(open(...))"` immediately after generation
+- Both `coolify.yaml` and `.github/workflows/deploy.yml` are validated after generation
+
+## Generated File Headers
+
+**GitHub Actions workflow (`deploy.yml`) header pattern:**
+```yaml
+# Auto-generated by ~/.claude/skills/setup-coolify/scripts/generate-workflow.sh
+# Source: $YAML_PATH
+# Pattern: GHCR same-image promotion. Smoke test is the gate — no manual approval.
+# Do not hand-edit — regenerate via /setup-coolify (rerun) instead.
+```
+
+This pattern — "auto-generated, do not hand-edit, regenerate via X" — is the standard for all generated outputs.
+
+## Commit Message Convention
+
+**Format:** `type(scope): description — detail`
+
+- `type`: `feat`, `fix`, `docs`, `test`, `chore`
+- `scope`: optional, uses sprint-day notation `(08-04)` for dated changes, or filename slug
+- `description`: imperative, lowercase, present tense
+- `detail` after ` — `: expands on what/why, used when the subject alone is insufficient
+
+**Examples observed:**
+```
+feat(08-04): add init.sh — interactive bootstrapper for coolify.yaml + deploy.yml
+fix(08-04): allow null coolify_app_ids in generate-workflow.sh for init bootstrap
+test: add E2E integration test — provision→deploy→smoke-test with hello-world container
+docs(08-05): add README.md — top-level entry point with prerequisites, install, troubleshooting
+chore: seed repo with Phase 7 skill files + skillmap example
+```
+
+## Documentation Conventions
+
+**In-script comments:**
+- Section dividers use `# ── Section name ──────...─` (em-dash + underscores) for visual grouping in longer scripts
+- Example from `test/e2e.sh`:
+  ```bash
+  # ── Configuration ──────────────────────────────────────────────────────────────
+  # ── Cleanup (runs unconditionally on EXIT) ─────────────────────────────────────
+  ```
+- Step labels use `# ── Step N: description ──` convention
+
+**README/docs pattern:**
+- All `.md` docs have a single `#` H1, then `##` sections — no deeper than `###`
+- Usage blocks always show the exact command first, then explanation
+- Prerequisites listed explicitly before usage, never implied
+
+## Idempotency Convention
+
+All mutating scripts guard against re-running with existence checks before create operations. The pattern is:
+```bash
+if [ -f "./coolify.yaml" ]; then
+  echo "ERROR: ./coolify.yaml already exists in $(pwd)" >&2
+  echo "Delete it first if you want to reinitialize." >&2
+  exit 1
+fi
+```
+And for API resources: lookup-by-name first, skip create if UUID returned (see `coolify_find_app_by_name` pattern in `scripts/provision.sh`).
+
+---
+
+*Convention analysis: 2026-05-21*
