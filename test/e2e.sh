@@ -88,7 +88,7 @@ write_report() {
 
   python3 - \
     "$REPORT_FILE" \
-    "$STAGING_DOMAIN" \
+    "${STAGING_DOMAIN:-}" \
     "${COOLIFY_PROJECT_UUID:-}" \
     "${STG_APP_UUID:-}" \
     "${PRD_APP_UUID:-}" \
