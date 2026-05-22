@@ -45,7 +45,7 @@ E2E_BASE_DOMAIN="${E2E_BASE_DOMAIN:-cicd.streamlinity.com}"
 SERVER_ALIAS=""
 # Override E2E_IMAGE to use a different test image (must listen on port 3000,
 # serve /api/health returning 200, and be pullable by the Coolify VPS).
-E2E_IMAGE="${E2E_IMAGE:-ghcr.io/anatesan-stream/claude-skills-deploy/hello-world:latest}"
+E2E_IMAGE="${E2E_IMAGE:-ghcr.io/anatesan-stream/csd-hello-world:latest}"
 DEPLOY_TIMEOUT=180    # seconds to wait for Coolify deploy to finish
 SMOKE_TIMEOUT=120     # seconds to wait for HTTPS smoke test (cert issuance takes ~30-60s)
 
@@ -308,16 +308,8 @@ doppler projects create "$TEST_PROJECT" \
 DOPPLER_CREATED=true
 echo "  created project: $TEST_PROJECT"
 
-# Create staging and production environments (may already exist from workspace template)
-for env_slug in staging production; do
-  doppler environments create \
-    --name "$(python3 -c "print('$env_slug'.capitalize())")" \
-    --slug "$env_slug" \
-    --project "$TEST_PROJECT" >/dev/null 2>&1 || true
-done
-
-# Set dummy secrets in both configs — these get injected into the container via Doppler
-for cfg in staging production; do
+# Doppler creates stg/prd configs by default — use those directly
+for cfg in stg prd; do
   doppler secrets set \
     HELLO=world \
     E2E_TEST=true \
@@ -351,11 +343,11 @@ d = {
     'environments': {
         'staging': {
             'domain': '$STAGING_DOMAIN',
-            'doppler_environment': 'staging'
+            'doppler_environment': 'stg'
         },
         'production': {
             'domain': '$PROD_DOMAIN',
-            'doppler_environment': 'production'
+            'doppler_environment': 'prd'
         }
     },
     'env_vars': ['HELLO', 'E2E_TEST'],

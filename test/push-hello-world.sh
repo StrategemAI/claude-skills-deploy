@@ -17,7 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GHCR_ORG="${GHCR_ORG:-anatesan-stream}"
-IMAGE="ghcr.io/${GHCR_ORG}/claude-skills-deploy/hello-world"
+IMAGE="ghcr.io/${GHCR_ORG}/csd-hello-world"
 TAG="${TAG:-latest}"
 
 echo "=== Building E2E hello-world image ==="
@@ -55,7 +55,7 @@ docker push "${IMAGE}:${TAG}"
 echo ""
 echo "=== Making package public (so Coolify can pull without auth) ==="
 # GHCR packages are private by default; make public so the Coolify VPS can pull it
-REPO_NAME="claude-skills-deploy%2Fhello-world"
+REPO_NAME="csd-hello-world"
 gh api \
   --method PATCH \
   "/user/packages/container/${REPO_NAME}" \

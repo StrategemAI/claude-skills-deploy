@@ -39,7 +39,7 @@ jobs:
           context: test/hello-world
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/${{ github.repository_owner }}/claude-skills-deploy/hello-world:latest
+          tags: ghcr.io/${{ github.repository_owner }}/csd-hello-world:latest
 
       - name: Make package public
         env:
@@ -47,7 +47,7 @@ jobs:
         run: |
           gh api \
             --method PATCH \
-            "/user/packages/container/claude-skills-deploy%2Fhello-world" \
+            "/user/packages/container/csd-hello-world" \
             -f visibility=public \
             && echo "✓ package visibility set to public" \
             || echo "⚠ could not set visibility — set manually in GitHub package settings"
