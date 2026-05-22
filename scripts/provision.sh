@@ -149,13 +149,22 @@ import json, subprocess, sys
 project, config, token, env_vars_str = sys.argv[1:5]
 env_vars = env_vars_str.split() if env_vars_str else []
 data = [{"key": "DOPPLER_TOKEN", "value": token, "is_preview": False}]
+failures = []
 for k in env_vars:
     result = subprocess.run(
         ["doppler", "secrets", "get", "--project", project, "--config", config, k, "--plain"],
         capture_output=True, text=True
     )
+    if result.returncode != 0:
+        failures.append((k, result.stderr.strip()))
+        continue
     v = result.stdout.strip()
     data.append({"key": k, "value": v, "is_preview": False})
+if failures:
+    sys.stderr.write(f"ERROR: doppler secrets get failed for {len(failures)} key(s) in {project}/{config}:\n")
+    for k, err in failures:
+        sys.stderr.write(f"ERROR: doppler secrets get {k} failed: {err}\n")
+    raise SystemExit(1)
 print(json.dumps(data))
 PY
 )
