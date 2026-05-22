@@ -1,0 +1,53 @@
+# push-test-image.yml — Build and push the E2E hello-world test image to GHCR.
+#
+# Trigger manually (workflow_dispatch) or automatically when test/hello-world/ changes.
+# Uses GITHUB_TOKEN — no separate PAT required. Requires "Read and write" Actions
+# permissions (Settings → Actions → General → Workflow permissions).
+#
+# Forkers: run this once after forking to publish the test image to your GHCR namespace.
+
+name: Push E2E Test Image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'test/hello-world/**'
+
+jobs:
+  push-test-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push hello-world image
+        uses: docker/build-push-action@v6
+        with:
+          context: test/hello-world
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository_owner }}/claude-skills-deploy/hello-world:latest
+
+      - name: Make package public
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            --method PATCH \
+            "/user/packages/container/claude-skills-deploy%2Fhello-world" \
+            -f visibility=public \
+            && echo "✓ package visibility set to public" \
+            || echo "⚠ could not set visibility — set manually in GitHub package settings"

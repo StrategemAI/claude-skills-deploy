@@ -28,12 +28,8 @@ A developer can clone this repo, run one command, see a working hello-world depl
 
 ### Active
 
-**Test framework:**
-- [ ] Review and refine `test/e2e.sh` — full provision→deploy→smoke-test; no auto-cleanup (remove unconditional `trap EXIT` cleanup)
-- [ ] Write test report to `test/results/` — staging URL, Coolify app IDs, per-step pass/fail, timestamp
-- [ ] Make E2E test portable — replace hardcoded `cicd.streamlinity.com` with `E2E_BASE_DOMAIN` env var
-- [ ] Add static validation of generated `deploy.yml` — YAML lint + job dependency graph check (catches job-name bugs like the `smoke-staging` issue)
-- [ ] Add `test/cleanup-deployment.sh` — separate teardown script for hello-world deployment; reads app IDs from test report
+**Cleanup script (Phase 3):**
+- [ ] Add `test/cleanup-deployment.sh` — separate teardown script for hello-world deployment; reads app IDs from JSON test report
 
 ### Out of Scope
 
@@ -62,11 +58,13 @@ A developer can clone this repo, run one command, see a working hello-world depl
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Static workflow validation instead of live GitHub Actions run | Avoids external dependency, catches structural bugs fast (like the `smoke-staging` job name bug) | — Pending |
-| No auto-cleanup in E2E test | New users need to see the deployed result to build trust in the skill | — Pending |
+| Static workflow validation instead of live GitHub Actions run | Avoids external dependency, catches structural bugs fast (like the `smoke-staging` job name bug) | Validated — Phase 02 complete (`test/validate-workflow.sh`) |
+| No auto-cleanup in E2E test on success | New users need to see the deployed result to build trust in the skill | Validated — Phase 02 complete (cleanup skipped when exit_code=0) |
 | Fix HIGH bugs before building test framework | E2E test would fail for the wrong reasons if workflow generation is broken | Validated — Phase 01 complete |
-| `E2E_BASE_DOMAIN` env var for portability | Allows domain fork developers to run the same test against their Coolify server | — Pending |
-| Test report written to `test/results/` | Persists pass/fail state and URLs between test run and cleanup; enables maintainer CI assertions | — Pending |
+| `E2E_BASE_DOMAIN` + `E2E_SERVER` env vars for portability | Allows domain fork developers to run the same test against their Coolify server without editing the script | Validated — Phase 02 complete |
+| Test report written to `test/results/` | Persists pass/fail state and URLs between test run and cleanup; enables maintainer CI assertions | Validated — Phase 02 complete (JSON report, written on pass and fail) |
+| `GHCR_TOKEN` stored in Doppler `claude-skills-deploy/stg` | Operator credential for pushing test image; Doppler ensures any team member can run E2E tests without out-of-band secret sharing; teardown never touches this project | Validated — Phase 02 setup |
+| `workflow_dispatch` CI job (`push-test-image.yml`) for test image | Zero-PAT path for forkers — uses `GITHUB_TOKEN` with `packages: write`; no separate credential needed | Validated — Phase 02 setup |
 
 ## Evolution
 
@@ -86,4 +84,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-22 — Phase 01: bug-fixes complete*
+*Last updated: 2026-05-22 — Phase 02: test-framework complete*

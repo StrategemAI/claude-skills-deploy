@@ -6,7 +6,12 @@
 #   bash test/push-hello-world.sh
 #   GHCR_ORG=my-org bash test/push-hello-world.sh   # override org
 #
-# Requires: Docker, gh CLI authenticated to the GHCR org
+# GHCR_TOKEN resolution order:
+#   1. GHCR_TOKEN env var (highest priority)
+#   2. Doppler: claude-skills-deploy/stg GHCR_TOKEN secret
+#   3. Error — see setup-guide.md for how to store the token in Doppler
+#
+# Requires: Docker, doppler CLI (authenticated), gh CLI (for visibility patch)
 
 set -euo pipefail
 
@@ -25,18 +30,23 @@ docker build \
   "$SCRIPT_DIR/hello-world/"
 
 echo ""
-echo "=== Authenticating to GHCR ==="
-# Requires a PAT with write:packages scope (separate from the repo+workflow PAT used for CI).
-# Create one at: https://github.com/settings/tokens/new
-#   → Select: write:packages, read:packages, delete:packages
-# Then pass it via environment: GHCR_TOKEN=ghp_... bash test/push-hello-world.sh
+echo "=== Resolving GHCR_TOKEN ==="
+# Resolution order: env var → Doppler claude-skills-deploy/stg → error
 if [ -z "${GHCR_TOKEN:-}" ]; then
-  echo "ERROR: GHCR_TOKEN not set. Export a PAT with write:packages scope:" >&2
-  echo "  export GHCR_TOKEN=ghp_...   # github.com/settings/tokens/new → write:packages" >&2
-  echo "  bash test/push-hello-world.sh" >&2
+  GHCR_TOKEN=$(doppler secrets get GHCR_TOKEN \
+    --project claude-skills-deploy --config stg --plain 2>/dev/null || true)
+fi
+if [ -z "${GHCR_TOKEN:-}" ]; then
+  echo "ERROR: GHCR_TOKEN not found. Store it in Doppler:" >&2
+  echo "  doppler secrets set GHCR_TOKEN --project claude-skills-deploy --config stg" >&2
+  echo "  (PAT needs write:packages scope — see docs/setup-guide.md)" >&2
   exit 1
 fi
-echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-anatesan-stream}" --password-stdin
+echo "  ✓ token resolved"
+
+echo ""
+echo "=== Authenticating to GHCR ==="
+echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USER:-${GHCR_ORG}}" --password-stdin
 
 echo ""
 echo "=== Pushing ${IMAGE}:${TAG} ==="

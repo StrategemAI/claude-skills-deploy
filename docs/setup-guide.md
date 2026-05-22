@@ -207,6 +207,44 @@ The generated `.github/workflows/deploy.yml` requires two GitHub Actions secrets
 
 ---
 
+## Step 6b: Store GHCR_TOKEN for local E2E testing
+
+The E2E test script (`test/e2e.sh`) needs to pull the hello-world test image from GHCR.
+The image must be pushed once before the test can run. This requires a GitHub PAT with
+`write:packages` scope stored in Doppler.
+
+**Why Doppler, not an env var?** Any operator with access to the `claude-skills-deploy`
+Doppler project can push the test image and run E2E tests without sharing secrets
+out-of-band. The token is never committed.
+
+**One-time setup:**
+
+1. Create a GitHub PAT with `write:packages, read:packages, delete:packages` scopes at
+   `https://github.com/settings/tokens/new`.
+
+2. Store it in Doppler:
+   ```bash
+   doppler secrets set GHCR_TOKEN --project claude-skills-deploy --config stg
+   ```
+
+3. Push the hello-world test image (only needed once, or when `test/hello-world/` changes):
+   ```bash
+   bash test/push-hello-world.sh
+   ```
+   The script automatically reads `GHCR_TOKEN` from Doppler if it is not set in the
+   environment.
+
+**Alternative — CI push (no PAT required):** The `push-test-image.yml` workflow in this
+repo builds and pushes the test image using `GITHUB_TOKEN` (no separate PAT). Run it
+manually from GitHub Actions → "Push E2E Test Image" → Run workflow, or it triggers
+automatically when `test/hello-world/` changes on `main`.
+
+**Teardown safety:** `GHCR_TOKEN` lives in the `claude-skills-deploy` Doppler project.
+E2E cleanup only deletes the throwaway test project (e.g., `csd-e2e-YYYYMMDDHHMMSS`)
+from Doppler — it never touches the `claude-skills-deploy` project or its secrets.
+
+---
+
 ## Step 7: Bootstrap and provision
 
 With all setup complete, bootstrap any target repo:
