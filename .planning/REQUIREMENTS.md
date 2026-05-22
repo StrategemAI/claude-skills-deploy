@@ -13,11 +13,11 @@
 
 ### E2E Test Framework
 
-- [ ] **TEST-01**: Operator can run `bash test/e2e.sh` against a real Coolify server to provision a hello-world staging app and verify it responds to an HTTPS smoke test at `/api/health`
-- [ ] **TEST-02**: E2E test writes a machine-readable test report to `test/results/YYYYMMDD-HHMMSS.json` containing: staging URL, Coolify project UUID, staging app UUID, per-step pass/fail results, and run timestamp
-- [ ] **TEST-03**: E2E test does not auto-teardown the deployment on completion — staging app remains running so the operator can browse to the URL and verify the deployment visually
-- [ ] **TEST-04**: E2E test target is fully configurable via env vars: `E2E_SERVER` (default: `vultr-stream`) and `E2E_BASE_DOMAIN` (default: `cicd.streamlinity.com`) — defaults are clearly documented as "change for other domains" in the script header
-- [ ] **TEST-05**: E2E test script prints a completion summary: staging URL, test report path, and next step (`bash test/cleanup-deployment.sh <report-file>`)
+- [x] **TEST-01**: Operator can run `bash test/e2e.sh` against a real Coolify server to provision a hello-world staging app and verify it responds to an HTTPS smoke test at `/api/health`
+- [x] **TEST-02**: E2E test writes a machine-readable test report to `test/results/YYYYMMDD-HHMMSS.json` containing: staging URL, Coolify project UUID, staging app UUID, per-step pass/fail results, and run timestamp
+- [x] **TEST-03**: E2E test does not auto-teardown the deployment on completion — staging app remains running so the operator can browse to the URL and verify the deployment visually
+- [x] **TEST-04**: E2E test target is fully configurable via env vars: `E2E_SERVER` (default: `vultr-stream`) and `E2E_BASE_DOMAIN` (default: `cicd.streamlinity.com`) — defaults are clearly documented as "change for other domains" in the script header
+- [x] **TEST-05**: E2E test script prints a completion summary: staging URL, test report path, and next step (`bash test/cleanup-deployment.sh <report-file>`)
 
 ### Workflow Validation
 
@@ -64,11 +64,11 @@
 | BUG-01 | Phase 1 | Complete |
 | BUG-02 | Phase 1 | Complete |
 | BUG-03 | Phase 1 | Complete |
-| TEST-01 | Phase 2 | Pending |
-| TEST-02 | Phase 2 | Pending |
-| TEST-03 | Phase 2 | Pending |
-| TEST-04 | Phase 2 | Pending |
-| TEST-05 | Phase 2 | Pending |
+| TEST-01 | Phase 2 | Complete |
+| TEST-02 | Phase 2 | Complete |
+| TEST-03 | Phase 2 | Complete |
+| TEST-04 | Phase 2 | Complete |
+| TEST-05 | Phase 2 | Complete |
 | VALID-01 | Phase 2 | Complete |
 | VALID-02 | Phase 2 | Complete |
 | CLEAN-01 | Phase 3 | Pending |

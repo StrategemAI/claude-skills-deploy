@@ -42,7 +42,7 @@ deployment on their Coolify server.
   4. Re-running the test against a different Coolify server works by setting `E2E_SERVER` and `E2E_BASE_DOMAIN` env vars — no edits to the script required
   5. `bash test/validate-workflow.sh <path-to-deploy.yml>` exits non-zero and prints the offending reference when a `needs:` list contains a job name that does not exist in the workflow
 **Plans**: 2 plans
-- [ ] 02-01-PLAN.md — Modify test/e2e.sh: env var config (E2E_SERVER/E2E_BASE_DOMAIN), conditional cleanup, JSON report, completion summary (TEST-01..05)
+- [x] 02-01-PLAN.md — Modify test/e2e.sh: env var config (E2E_SERVER/E2E_BASE_DOMAIN), conditional cleanup, JSON report, completion summary (TEST-01..05)
 - [x] 02-02-PLAN.md — Create test/validate-workflow.sh: YAML syntax + needs-reference resolution checks (VALID-01, VALID-02)
 
 **UI hint**: no

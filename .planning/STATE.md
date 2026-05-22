@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 02-test-framework-02-02-PLAN.md
-last_updated: "2026-05-22T16:32:05.213Z"
+stopped_at: Completed 02-test-framework-02-01-PLAN.md
+last_updated: "2026-05-22T16:37:05.748Z"
 last_activity: 2026-05-22
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -56,6 +56,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-bug-fixes P02 | 1 | 2 tasks | 1 files |
 | Phase 01-bug-fixes P03 | 3 | 2 tasks | 2 files |
 | Phase 02-test-framework P02 | 5 | 1 tasks | 1 files |
+| Phase 02-test-framework P01 | 3 | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,8 @@ Recent decisions affecting current work:
 - [Phase 01-bug-fixes]: D-07: Document server_name in Optional Fields subsection and Backward Compatibility section following ssh_host migration block pattern
 - [Phase 02-test-framework]: Inline Python heredoc with single-quoted PY marker prevents bash variable expansion in Python f-strings
 - [Phase 02-test-framework]: VALID-02 error accumulation: collect all broken needs refs before exiting, matching validate.sh convention
+- [Phase 02-test-framework]: E2E_SERVER env var replaces python3 coolify.json first-server fallback — simpler and explicit
+- [Phase 02-test-framework]: write_report() called idempotently from main body and cleanup() to ensure report written on both pass and fail paths
 
 ### Pending Todos
 
@@ -87,6 +90,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-05-22T16:32:05.211Z
-Stopped at: Completed 02-test-framework-02-02-PLAN.md
+Last session: 2026-05-22T16:37:05.745Z
+Stopped at: Completed 02-test-framework-02-01-PLAN.md
 Resume file: None
