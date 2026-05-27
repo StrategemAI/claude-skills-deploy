@@ -9,14 +9,15 @@ Two repos and three external services work together to produce a same-image-prom
 Run through these steps once per domain. Steps ①–③ and ⑤–⑦ are CLI commands; only step ④ (creating the Doppler project) requires a browser.
 
 ```mermaid
+%%{init: {"flowchart": {"htmlLabels": true}}}%%
 flowchart TD
-    A["① Install skill\ngit clone claude-skills-deploy\n→ ~/.claude/skills/setup-coolify/"]
-    B["② Configure machine credentials\n~/.claude/coolify.json\nCoolify URL · API key · ssh_host · Doppler account"]
-    C["③ Bootstrap your app repo\nbash ~/.claude/skills/setup-coolify/init/init.sh\n↳ writes coolify.yaml  (deploy manifest, safe to commit)\n↳ writes .github/workflows/deploy.yml  (CI pipeline)"]
-    D["④ Create Doppler project  ⚠ browser step\nNew project → two configs: staging · production\nAdd all secrets listed in coolify.yaml env_vars"]
-    E["⑤ Dry-run validate\n/setup-coolify validate\nChecks Coolify API reachability + every Doppler secret exists\nNo mutations"]
-    F["⑥ Provision\n/setup-coolify\n↳ Coolify staging app created\n↳ Coolify production app created\n↳ Doppler service tokens generated + wired as DOPPLER_TOKEN\n↳ Docker volume created on VPS for Doppler fallback cache\n↳ app UUIDs written back to coolify.yaml"]
-    G["⑦ Go live\ngit add coolify.yaml .github/workflows/deploy.yml\ngit commit -m 'ci: add Coolify deploy pipeline' && git push\nGitHub Actions pipeline is now active"]
+    A["<div style='text-align:left; padding:2px 8px'><b>① Install skill</b><br/>• Fork <code>anatesan-stream/claude-skills-deploy</code> on GitHub<br/>• Clone your fork to <code>~/.claude/skills/setup-coolify/</code></div>"]
+    B["<div style='text-align:left; padding:2px 8px'><b>② Configure machine credentials</b><br/>File: <code>~/.claude/coolify.json</code><br/>• Coolify URL<br/>• API key<br/>• ssh_host (alias in ~/.ssh/config)<br/>• Doppler account</div>"]
+    C["<div style='text-align:left; padding:2px 8px'><b>③ Bootstrap your app repo</b><br/><code>bash ~/.claude/skills/setup-coolify/init/init.sh</code><br/>Writes two files:<br/>• <code>coolify.yaml</code> — deploy manifest, safe to commit<br/>• <code>.github/workflows/deploy.yml</code> — CI pipeline</div>"]
+    D["<div style='text-align:left; padding:2px 8px'><b>④ Create Doppler project</b> ⚠ browser step<br/>• New project at dashboard.doppler.com<br/>• Create two configs: staging · production<br/>• Add all secrets listed in <code>coolify.yaml</code> env_vars</div>"]
+    E["<div style='text-align:left; padding:2px 8px'><b>⑤ Dry-run validate</b><br/><code>/setup-coolify validate</code><br/>• Checks Coolify API reachability<br/>• Verifies every Doppler secret exists in staging + production<br/>• No mutations</div>"]
+    F["<div style='text-align:left; padding:2px 8px'><b>⑥ Provision</b><br/><code>/setup-coolify</code><br/>• Coolify staging app created<br/>• Coolify production app created<br/>• Doppler service tokens generated + wired as DOPPLER_TOKEN<br/>• Docker volume created on VPS for Doppler fallback cache<br/>• App UUIDs written back to <code>coolify.yaml</code></div>"]
+    G["<div style='text-align:left; padding:2px 8px'><b>⑦ Go live</b><br/>• <code>git add coolify.yaml .github/workflows/deploy.yml</code><br/>• <code>git commit -m 'ci: add Coolify deploy pipeline'</code><br/>• <code>git push</code><br/>GitHub Actions pipeline is now active</div>"]
 
     A --> B --> C --> D --> E --> F --> G
 
