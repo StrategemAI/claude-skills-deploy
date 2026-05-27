@@ -99,7 +99,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Add DNS provisioning and cleanup to deployment skill (`2026-05-27-add-dns-provisioning-and-cleanup-to-deployment-skill.md`)
+None.
 
 ### Blockers/Concerns
 
@@ -108,8 +108,8 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-05-22T20:01:01.712Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-05-27T11:50:00.000Z
+Stopped at: Completed 260527-g21 quick task — DNS provisioning + cleanup
 Resume file: None
 
 ### Next Session TODO
