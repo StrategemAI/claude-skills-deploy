@@ -99,7 +99,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Add DNS provisioning and cleanup to deployment skill (`2026-05-27-add-dns-provisioning-and-cleanup-to-deployment-skill.md`)
 
 ### Blockers/Concerns
 
