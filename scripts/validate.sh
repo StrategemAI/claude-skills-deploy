@@ -12,6 +12,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-coolify-api.sh"
 source "$SCRIPT_DIR/lib-doppler-api.sh"
+source "$SCRIPT_DIR/lib-dns-api.sh"
 
 YAML_PATH="${1:-./coolify.yaml}"
 
@@ -105,6 +106,67 @@ if [ "$ERRORS" -gt 0 ]; then
   echo "" >&2
   echo "Stop: $ERRORS Doppler key error(s) above. Fix in Doppler dashboard or via:" >&2
   echo "  doppler --account $DOPPLER_ACCOUNT secrets set --project $DOPPLER_PROJECT --config <env> KEY=VALUE" >&2
+  exit 1
+fi
+
+# Validate DNS block (if present and not provider: none)
+DNS_VALIDATION=$(python3 -c "
+import yaml, sys
+d = yaml.safe_load(open('$YAML_PATH'))
+dns = d.get('dns', {})
+provider = dns.get('provider', 'none')
+if not provider or provider == 'none':
+    print('skip')
+    sys.exit(0)
+zone_name    = dns.get('zone_name', '')
+cred_source  = dns.get('credential_source', 'doppler')
+cred_key     = dns.get('credential_key', '')
+staging_dom  = d.get('environments',{}).get('staging',{}).get('domain','')
+prod_dom     = d.get('environments',{}).get('production',{}).get('domain','')
+print(f'provider={provider}')
+print(f'zone_name={zone_name}')
+print(f'cred_source={cred_source}')
+print(f'cred_key={cred_key}')
+print(f'staging_domain={staging_dom}')
+print(f'prod_domain={prod_dom}')
+")
+
+if [ "$DNS_VALIDATION" = "skip" ]; then
+  echo "validate: dns: skipped (provider: none or block absent)"
+else
+  eval "$DNS_VALIDATION"
+
+  if [ -z "${zone_name:-}" ]; then
+    fail "INVALID:coolify.yaml:dns.zone_name (empty — required when dns.provider is not none)"
+  fi
+  if [ -z "${cred_key:-}" ]; then
+    fail "INVALID:coolify.yaml:dns.credential_key (empty — required when dns.provider is not none)"
+  fi
+
+  # Zone must be a suffix of both domains
+  if [ -n "${zone_name:-}" ] && [ -n "${staging_domain:-}" ]; then
+    if [[ "$staging_domain" != *".$zone_name" ]] && [[ "$staging_domain" != "$zone_name" ]]; then
+      fail "INVALID:coolify.yaml:dns.zone_name '$zone_name' is not a suffix of staging domain '$staging_domain'"
+    fi
+  fi
+  if [ -n "${zone_name:-}" ] && [ -n "${prod_domain:-}" ]; then
+    if [[ "$prod_domain" != *".$zone_name" ]] && [[ "$prod_domain" != "$zone_name" ]]; then
+      fail "INVALID:coolify.yaml:dns.zone_name '$zone_name' is not a suffix of production domain '$prod_domain'"
+    fi
+  fi
+
+  # Check credential is reachable (no mutations)
+  export DOPPLER_PROJECT DOPPLER_ENV="${STAGING_DOPPLER:-stg}"
+  if ! dns_check_credentials "$YAML_PATH"; then
+    fail "MISSING:DNS_CREDENTIAL:${cred_key:-<credential_key>} (not found in ${cred_source:-doppler})"
+  else
+    echo "validate: dns: provider=$provider zone=$zone_name credential=$cred_key (source: ${cred_source:-doppler}) — OK"
+  fi
+fi
+
+if [ "$ERRORS" -gt 0 ]; then
+  echo "" >&2
+  echo "Stop: $ERRORS error(s) above. Fix and re-run." >&2
   exit 1
 fi
 

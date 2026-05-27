@@ -53,6 +53,25 @@ environments:
     # Doppler creates stg and prd by default — do not change unless you renamed them.
     doppler_environment: prd
 
+# DNS provisioning — optional but recommended.
+# When configured, /setup-coolify creates A records pointing at your VPS automatically,
+# eliminating the manual DNS step before Let's Encrypt HTTPS issuance succeeds.
+# Set provider to 'none' to skip DNS provisioning and create A records manually.
+dns:
+  # CHANGE: cloudflare | none
+  provider: {{DNS_PROVIDER}}
+  # CHANGE: root zone (e.g. example.com). Must be a suffix of both staging + production domains.
+  # Leave empty when provider is 'none'.
+  zone_name: {{DNS_ZONE_NAME}}
+  # LEAVE: doppler | coolify_json. Where the API token is stored.
+  #   doppler      — token is a secret in your Doppler project (recommended).
+  #   coolify_json — token is stored in ~/.claude/coolify.json servers.<alias>.<credential_key>.
+  credential_source: {{DNS_CREDENTIAL_SOURCE}}
+  # CHANGE: Doppler secret name (e.g. CLOUDFLARE_API_TOKEN) if credential_source=doppler,
+  #         OR the coolify.json server field name (e.g. cloudflare_api_token) if credential_source=coolify_json.
+  # Leave empty when provider is 'none'.
+  credential_key: {{DNS_CREDENTIAL_KEY}}
+
 # CHANGE: list every environment variable your app reads (e.g. DATABASE_URL).
 # These must exist in BOTH the stg and prd Doppler configs.
 # They are injected at container start — NOT baked into the image.

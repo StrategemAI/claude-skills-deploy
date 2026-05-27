@@ -36,6 +36,75 @@ instance and Doppler account to use; all other config is repo-local.
 | `coolify_app_ids.staging` | string \| null | `~` | Coolify application UUID for staging. Written by `provision.sh` after the first successful run. Do not edit manually. |
 | `coolify_app_ids.production` | string \| null | `~` | Coolify application UUID for production. Written by `provision.sh` after the first successful run. Do not edit manually. |
 
+### Optional DNS block
+
+Automates A record creation for staging and production domains, eliminating the manual DNS step before Coolify can issue Let's Encrypt certificates. When `provider: none` (or the block is absent), A records must be created manually.
+
+| Field | Type | Default | Description | Example |
+|-------|------|---------|-------------|---------|
+| `dns.provider` | string | `none` | DNS provider. `cloudflare` enables automated provisioning; `none` skips DNS entirely. | `cloudflare` |
+| `dns.zone_name` | string | — | Root DNS zone. Must be a suffix of both `environments.staging.domain` and `environments.production.domain`. | `example.com` |
+| `dns.credential_source` | string | `doppler` | Where the API token is stored. `doppler` — read from the Doppler staging config at provision time. `coolify_json` — read from `~/.claude/coolify.json` servers.<alias>.<credential_key>. | `doppler` |
+| `dns.credential_key` | string | — | Name of the Doppler secret (e.g. `CLOUDFLARE_API_TOKEN`) or `coolify.json` server field (e.g. `cloudflare_api_token`) that holds the provider API token. | `CLOUDFLARE_API_TOKEN` |
+
+**Example dns block (Cloudflare, token in Doppler):**
+
+```yaml
+dns:
+  provider: cloudflare
+  zone_name: example.com
+  credential_source: doppler
+  credential_key: CLOUDFLARE_API_TOKEN
+```
+
+**To skip DNS automation:**
+
+```yaml
+dns:
+  provider: none
+  zone_name: ""
+  credential_source: doppler
+  credential_key: ""
+```
+
+Or simply omit the `dns:` block entirely.
+
+## DNS Providers
+
+### Cloudflare
+
+Cloudflare is the only supported provider in this release. The `lib-dns-api.sh` library includes a provider dispatch shim (`dns_upsert_a_record`, `dns_delete_record`) that routes calls by `$DNS_PROVIDER` — adding a new provider requires only implementing the corresponding `dns_<provider>_*` functions and a new case branch.
+
+**Token requirements:** Create a Cloudflare API token at `https://dash.cloudflare.com/profile/api-tokens` with **Zone: DNS: Edit** permission scoped to the target zone only. User-level "Global API Key" is not recommended.
+
+**Storing the token in Doppler (recommended):**
+
+```bash
+doppler secrets set CLOUDFLARE_API_TOKEN --project <your-project> --config stg
+```
+
+The token is shared across environments (DNS credentials are zone-level, not env-level), so storing it once in the staging config is sufficient. `provision.sh` and `validate.sh` read from the staging config by default.
+
+**Storing the token in coolify.json (alternative):**
+
+Add a `cloudflare_api_token` (or any field name matching `dns.credential_key`) to your server entry:
+
+```json
+{
+  "servers": {
+    "vultr-stream": {
+      "url": "...",
+      "api_key": "...",
+      "doppler_account": "...",
+      "ssh_host": "...",
+      "cloudflare_api_token": "cf_..."
+    }
+  }
+}
+```
+
+Then set `dns.credential_source: coolify_json` and `dns.credential_key: cloudflare_api_token` in `coolify.yaml`.
+
 ### Reserved (Not Yet Active)
 
 The `# build_time: true` trailing-comment annotation on `env_vars` entries is reserved
@@ -197,6 +266,10 @@ Set these yourself when onboarding a new repo:
 - `env_vars` (list)
 - `build.context` (optional; default `.`)
 - `build.dockerfile` (optional; default `./Dockerfile`)
+- `dns.provider` (optional; default `none`)
+- `dns.zone_name` (optional; required when `dns.provider` is not `none`)
+- `dns.credential_source` (optional; default `doppler`)
+- `dns.credential_key` (optional; required when `dns.provider` is not `none`)
 
 ### Skill-written fields (in `coolify.yaml`)
 
@@ -227,6 +300,7 @@ populate interactively, or write the file manually.
   `registry.image`, `environments.staging.domain`, `environments.staging.doppler_environment`,
   `environments.production.domain`, `environments.production.doppler_environment`, `env_vars`)
 - `env_vars` is a non-empty list
+- If `dns.provider` is not `none`: `dns.zone_name` is non-empty; `dns.zone_name` is a suffix of both staging and production domains; `dns.credential_key` is non-empty; the credential named by `dns.credential_key` is present in the declared `dns.credential_source` (Doppler staging config or `coolify.json`)
 
 ### coolify.json checks
 
