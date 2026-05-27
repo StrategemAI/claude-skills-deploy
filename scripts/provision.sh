@@ -8,6 +8,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-coolify-api.sh"
 source "$SCRIPT_DIR/lib-doppler-api.sh"
+source "$SCRIPT_DIR/lib-dns-api.sh"
 
 YAML_PATH="${1:-./coolify.yaml}"
 [ -f "$YAML_PATH" ] || { echo "ERROR: $YAML_PATH not found" >&2; exit 1; }
@@ -78,6 +79,67 @@ if [ -z "$SSH_HOST" ]; then
   exit 1
 fi
 echo "  ssh_host=$SSH_HOST"
+
+# Resolve VPS public IP — needed for DNS A record creation.
+# Strategy: read vps_ip from coolify.json if present (avoids SSH round-trip on re-runs);
+# otherwise resolve via SSH using ifconfig.me.
+VPS_IP=$(python3 -c "
+import json
+d=json.load(open('$HOME/.claude/coolify.json'))
+print(d.get('servers',{}).get('$SERVER_ALIAS',{}).get('vps_ip',''))
+")
+if [ -z "$VPS_IP" ]; then
+  VPS_IP=$(ssh "$SSH_HOST" "curl -s -4 ifconfig.me" 2>/dev/null | tr -d '[:space:]' || echo "")
+  if [ -z "$VPS_IP" ]; then
+    echo "ERROR: could not determine VPS public IP for $SSH_HOST. Add 'vps_ip' to coolify.json servers.$SERVER_ALIAS or check SSH connectivity." >&2
+    exit 1
+  fi
+  # Validate dotted-quad format
+  if ! echo "$VPS_IP" | grep -qE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$'; then
+    echo "ERROR: VPS IP resolved to '$VPS_IP' which is not a valid IPv4 address" >&2
+    exit 1
+  fi
+  echo "  vps_ip=$VPS_IP (source: ssh)"
+else
+  echo "  vps_ip=$VPS_IP (source: coolify.json)"
+fi
+
+# Parse dns: block and load credentials if provider is not none
+DNS_ENABLED=false
+DNS_ZONE_ID=""
+declare -A DNS_RECORD_IDS
+
+eval "$(python3 -c "
+import yaml, sys
+d = yaml.safe_load(open('$YAML_PATH'))
+dns = d.get('dns', {})
+provider = dns.get('provider', 'none')
+if not provider or provider == 'none':
+    print('dns_provider=none')
+    sys.exit(0)
+zone_name   = dns.get('zone_name', '')
+cred_source = dns.get('credential_source', 'doppler')
+cred_key    = dns.get('credential_key', '')
+print(f'dns_provider={provider}')
+print(f'dns_zone_name_raw={zone_name}')
+print(f'dns_cred_source={cred_source}')
+print(f'dns_cred_key={cred_key}')
+")"
+
+if [ "${dns_provider:-none}" != "none" ]; then
+  DNS_ENABLED=true
+  export DNS_PROVIDER="$dns_provider" DNS_ZONE_NAME="$dns_zone_name_raw"
+  export DOPPLER_PROJECT DOPPLER_ENV="$STAGING_DOPPLER"
+  dns_load_credentials "$YAML_PATH"
+  DNS_ZONE_ID=$(dns_cf_get_zone_id "$DNS_ZONE_NAME")
+  if [ -z "$DNS_ZONE_ID" ]; then
+    echo "ERROR: DNS zone '$DNS_ZONE_NAME' not found in Cloudflare. Verify DNS_API_TOKEN has Zone:DNS:Edit scope." >&2
+    exit 1
+  fi
+  echo "  dns_provider=$DNS_PROVIDER zone=$DNS_ZONE_NAME zone_id=$DNS_ZONE_ID"
+else
+  echo "provision: dns: skipped (provider: none or block absent)"
+fi
 
 # 2. Per-environment provisioning
 declare -A APP_UUIDS
@@ -195,6 +257,14 @@ PY
     exit 1
   fi
   echo "    VERIFY mount round-trip OK"
+
+  # 2g. Upsert DNS A record for this domain (only when dns: block is configured)
+  if [ "$DNS_ENABLED" = true ]; then
+    ZR=$(dns_upsert_a_record "$DOMAIN" "$VPS_IP")   # echoes zone_id|record_id
+    DNS_RECORD_IDS[$ENV_NAME]="${ZR##*|}"
+    dns_verify_a_record "$DOMAIN" "$VPS_IP"           # round-trip check — hard-fail on mismatch
+    echo "    DNS A $DOMAIN -> $VPS_IP (record_id=${ZR##*|})"
+  fi
 done
 
 # 3. Write back coolify_app_ids to coolify.yaml

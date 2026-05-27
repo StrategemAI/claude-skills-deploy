@@ -28,6 +28,7 @@ set -euo pipefail
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$SKILL_DIR/scripts/lib-coolify-api.sh"
 source "$SKILL_DIR/scripts/lib-doppler-api.sh"
+source "$SKILL_DIR/scripts/lib-dns-api.sh"
 
 # ── Configuration ──────────────────────────────────────────────────────────────
 
@@ -114,6 +115,12 @@ PASS=0
 FAIL=0
 RESULTS=()
 REPORT_FILE=""
+DNS_PROVIDER=""
+DNS_ZONE_ID=""
+DNS_ZONE_NAME_E2E=""
+DNS_CREDENTIAL_SOURCE_E2E=""
+DNS_CREDENTIAL_KEY_E2E=""
+declare -a DNS_RECORDS=()
 
 pass() { PASS=$((PASS+1)); RESULTS+=("  ✓ $*"); echo "  ✓ $*"; }
 fail() { FAIL=$((FAIL+1)); RESULTS+=("  ✗ $*"); echo "  ✗ $*" >&2; }
@@ -139,22 +146,45 @@ write_report() {
     "$SERVER_ALIAS" \
     "${SSH_HOST:-}" \
     "${TEST_PROJECT:-}" \
+    "${DNS_PROVIDER:-}" \
+    "${DNS_ZONE_ID:-}" \
+    "${DNS_ZONE_NAME_E2E:-}" \
+    "${DNS_CREDENTIAL_SOURCE_E2E:-}" \
+    "${DNS_CREDENTIAL_KEY_E2E:-}" \
+    "${DNS_RECORDS[@]+"${DNS_RECORDS[@]}"}" \
+    "---results---" \
     "${RESULTS[@]+"${RESULTS[@]}"}" \
     <<'PY'
 import sys, json
 from datetime import datetime, timezone
 
 args = sys.argv[1:]
-report_file = args[0]
-staging_url = "https://" + args[1] if args[1] else ""
+report_file        = args[0]
+staging_domain     = args[1]
+staging_url        = "https://" + staging_domain if staging_domain else ""
 coolify_project_uuid = args[2]
-staging_app_uuid = args[3]
+staging_app_uuid   = args[3]
 production_app_uuid = args[4]
-ts_raw = args[5]
-server_alias = args[6]
-ssh_host = args[7]
-doppler_project = args[8]
-result_lines = args[9:]
+ts_raw             = args[5]
+server_alias       = args[6]
+ssh_host           = args[7]
+doppler_project    = args[8]
+dns_provider       = args[9]
+dns_zone_id        = args[10]
+dns_zone_name      = args[11]
+dns_cred_source    = args[12]
+dns_cred_key       = args[13]
+rest               = args[14:]
+
+# Split at sentinel to separate dns_records from result_lines
+sentinel = "---results---"
+if sentinel in rest:
+    idx = rest.index(sentinel)
+    dns_record_args = rest[:idx]
+    result_lines    = rest[idx+1:]
+else:
+    dns_record_args = []
+    result_lines    = rest
 
 run_timestamp = datetime.strptime(ts_raw, "%Y%m%d%H%M%S").replace(
     tzinfo=timezone.utc).isoformat()
@@ -163,9 +193,15 @@ steps = []
 for line in result_lines:
     s = line.strip()
     passed = s.startswith("✓")
-    # Strip leading mark + spaces
     name = s.lstrip("✓✗").strip()
     steps.append({"name": name, "passed": passed, "detail": ""})
+
+# DNS records format: "domain:record_id"
+dns_records = []
+for entry in dns_record_args:
+    if ":" in entry:
+        name_part, rec_id = entry.split(":", 1)
+        dns_records.append({"name": name_part, "record_id": rec_id, "type": "A"})
 
 report = {
     "run_timestamp": run_timestamp,
@@ -176,6 +212,12 @@ report = {
     "staging_app_uuid": staging_app_uuid,
     "production_app_uuid": production_app_uuid,
     "doppler_project": doppler_project,
+    "dns_provider": dns_provider,
+    "dns_zone_id": dns_zone_id,
+    "dns_zone_name": dns_zone_name,
+    "dns_credential_source": dns_cred_source,
+    "dns_credential_key": dns_cred_key,
+    "dns_records": dns_records,
     "steps": steps,
 }
 
@@ -200,9 +242,22 @@ cleanup() {
   echo " Passed: $PASS  Failed: $FAIL"
   echo "═══════════════════════════════════"
 
+  # DNS records are always cleaned up, even with --keep (no orphaned records policy).
+  # Coolify apps + Doppler project are skipped when --keep is set (operator inspects live state).
+  if [ -n "$DNS_PROVIDER" ] && [ ${#DNS_RECORDS[@]} -gt 0 ]; then
+    echo ""
+    echo "─── DNS cleanup (unconditional — runs even with --keep) ───"
+    for entry in "${DNS_RECORDS[@]}"; do
+      IFS=':' read -r dns_fqdn dns_rec_id <<< "$entry"
+      dns_delete_record "$DNS_ZONE_ID" "$dns_rec_id" \
+        && echo "  ✓ deleted DNS record $dns_fqdn ($dns_rec_id)" \
+        || echo "  ⚠ could not delete DNS record $dns_fqdn ($dns_rec_id)"
+    done
+  fi
+
   if $KEEP_ON_EXIT; then
     echo ""
-    echo "─── --keep: skipping cleanup ───"
+    echo "─── --keep: skipping Coolify/Doppler cleanup ───"
     echo "  Coolify project: $TEST_PROJECT (uuid: ${COOLIFY_PROJECT_UUID:-not_created})"
     echo "  Staging app UUID: ${STG_APP_UUID:-not_created}"
     echo "  Production app UUID: ${PRD_APP_UUID:-not_created}"
@@ -377,34 +432,80 @@ STAGING_DOMAIN="${TEST_PROJECT}-staging.${E2E_BASE_DOMAIN}"
 PROD_DOMAIN="${TEST_PROJECT}-production.${E2E_BASE_DOMAIN}"
 YAML_PATH="$WORK_DIR/coolify.yaml"
 
-python3 - "$YAML_PATH" <<PY
-import yaml, sys
+# Read dns_default from coolify.json for the test server alias (optional).
+# If present, the dns: block is injected into the test YAML so DNS provisioning
+# is exercised. If absent, the test runs the no-DNS path.
+_DNS_DEFAULT=$(python3 -c "
+import json, sys
+d = json.load(open('$HOME/.claude/coolify.json'))
+dns_def = d.get('servers', {}).get('$SERVER_ALIAS', {}).get('dns_default', {})
+if not dns_def or dns_def.get('provider', 'none') == 'none':
+    print('none')
+    sys.exit(0)
+import json
+print(json.dumps(dns_def))
+" 2>/dev/null || echo "none")
+
+python3 - "$YAML_PATH" "$_DNS_DEFAULT" <<'PY'
+import yaml, sys, json
 path = sys.argv[1]
+dns_raw = sys.argv[2]
+
 d = {
-    'project': '$TEST_PROJECT',
-    'server': '$SERVER_ALIAS',
-    'doppler_project': '$TEST_PROJECT',
+    'project': 'E2E_PROJECT_PLACEHOLDER',
+    'server': 'E2E_SERVER_PLACEHOLDER',
+    'doppler_project': 'E2E_DOPPLER_PLACEHOLDER',
     'registry': {
-        'image': '$E2E_IMAGE',
+        'image': 'E2E_IMAGE_PLACEHOLDER',
         'retention_tags': 5
     },
     'build': {'context': '.', 'dockerfile': './Dockerfile'},
     'environments': {
         'staging': {
-            'domain': '$STAGING_DOMAIN',
+            'domain': 'E2E_STAGING_DOMAIN_PLACEHOLDER',
             'doppler_environment': 'stg'
         },
         'production': {
-            'domain': '$PROD_DOMAIN',
+            'domain': 'E2E_PROD_DOMAIN_PLACEHOLDER',
             'doppler_environment': 'prd'
         }
     },
     'env_vars': ['HELLO', 'E2E_TEST'],
     'coolify_app_ids': {'staging': None, 'production': None}
 }
+
+if dns_raw != 'none':
+    try:
+        dns_cfg = json.loads(dns_raw)
+        d['dns'] = dns_cfg
+    except Exception:
+        pass
+
 with open(path, 'w') as f:
     yaml.safe_dump(d, f, sort_keys=False, default_flow_style=False)
 PY
+
+# Replace placeholder values with actual test values
+python3 - "$YAML_PATH" <<PY
+import yaml, sys
+path = sys.argv[1]
+with open(path) as f:
+    d = yaml.safe_load(f)
+d['project']                                  = '$TEST_PROJECT'
+d['server']                                   = '$SERVER_ALIAS'
+d['doppler_project']                          = '$TEST_PROJECT'
+d['registry']['image']                        = '$E2E_IMAGE'
+d['environments']['staging']['domain']        = '$STAGING_DOMAIN'
+d['environments']['production']['domain']     = '$PROD_DOMAIN'
+with open(path, 'w') as f:
+    yaml.safe_dump(d, f, sort_keys=False, default_flow_style=False)
+PY
+
+if [ "$_DNS_DEFAULT" != "none" ]; then
+  echo "  dns: block injected from coolify.json dns_default for $SERVER_ALIAS"
+else
+  echo "  dns: disabled for this run (no dns_default in coolify.json servers.$SERVER_ALIAS)"
+fi
 
 python3 -c "import yaml; yaml.safe_load(open('$YAML_PATH'))" \
   && pass "coolify.yaml valid YAML" \
@@ -453,6 +554,44 @@ for p in json.load(sys.stdin):
 else
   fail "coolify_app_ids not written back to coolify.yaml"
   exit 1
+fi
+
+# Capture DNS record IDs if provision.sh created them (dns: block was written into test YAML)
+eval "$(python3 -c "
+import yaml, sys
+d = yaml.safe_load(open('$YAML_PATH'))
+dns = d.get('dns', {})
+provider = dns.get('provider', 'none')
+if not provider or provider == 'none':
+    print('_dns_enabled=false')
+    sys.exit(0)
+print('_dns_enabled=true')
+print(f\"_dns_zone_name={dns.get('zone_name','')}\"  )
+print(f\"_dns_cred_source={dns.get('credential_source','doppler')}\"  )
+print(f\"_dns_cred_key={dns.get('credential_key','')}\"  )
+print(f\"_dns_provider_val={provider}\"  )
+")"
+
+if [ "${_dns_enabled:-false}" = "true" ]; then
+  DNS_PROVIDER="$_dns_provider_val"
+  DNS_ZONE_NAME_E2E="$_dns_zone_name"
+  DNS_CREDENTIAL_SOURCE_E2E="$_dns_cred_source"
+  DNS_CREDENTIAL_KEY_E2E="$_dns_cred_key"
+  export DNS_PROVIDER DNS_ZONE_NAME="$DNS_ZONE_NAME_E2E"
+  export DOPPLER_PROJECT="$TEST_PROJECT" DOPPLER_ENV="stg"
+  dns_load_credentials "$YAML_PATH"
+  DNS_ZONE_ID=$(dns_cf_get_zone_id "$DNS_ZONE_NAME")
+  if [ -n "$DNS_ZONE_ID" ]; then
+    for d in "$STAGING_DOMAIN" "$PROD_DOMAIN"; do
+      rec=$(dns_cf_find_record "$DNS_ZONE_ID" "$d" "A")
+      if [ -n "$rec" ]; then
+        DNS_RECORDS+=("$d:$rec")
+      fi
+    done
+    pass "DNS records present: ${#DNS_RECORDS[@]} (zone_id=$DNS_ZONE_ID)"
+  else
+    echo "  dns: zone '$DNS_ZONE_NAME' not found — DNS records not captured"
+  fi
 fi
 
 # ── Step 6: Trigger staging deploy ────────────────────────────────────────────
