@@ -82,6 +82,12 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `WARNING: UNPROTECTED PRIVATE KEY FILE!` | SSH key permissions too open (common after copying from another machine) | `chmod 0600 ~/.ssh/<keyname>` |
+| Coolify install hangs at step 1/9 for >10 min | `needrestart` prompting interactively and blocking apt | `echo "\$nrconf{restart} = 'a';" \| tee /etc/needrestart/conf.d/autorestart.conf` then re-run install |
+| `permission denied while trying to connect to the Docker API` | Docker group not active in current shell after `usermod` | Run `newgrp docker` or open a new terminal |
+| Apps deploy as `running:healthy` but HTTPS URLs time out | Coolify's Traefik proxy (`coolify-proxy`) is not running | `cd /data/coolify/proxy && docker compose up -d` (on the VPS) |
+| `Bind for 0.0.0.0:80 failed: port is already allocated` | Another container owns ports 80/443; Traefik can't start | Make the conflicting service internal (no port bindings), route it through Traefik — see [docs/troubleshooting.md](docs/troubleshooting.md) |
+| API calls return 401 despite correct token in coolify.json | Coolify tokens contain `\|`; old parsing truncated the key | Pull latest skill or update `coolify_load_server()` in `scripts/lib-coolify-api.sh` to use per-field python3 reads |
 | `ERROR: 'ssh_host' field is missing` | `~/.claude/coolify.json` server entry has no `ssh_host` | Add `"ssh_host": "<alias>"` to the server entry. Must match a host alias in `~/.ssh/config`. |
 | `MISSING:<KEY>:staging (key absent in Doppler)` | env_vars key in coolify.yaml not yet in the Doppler `staging` config | `doppler secrets set --project <p> --config staging <KEY>=<value>` |
 | `doppler: unknown flag --account` | Old code using removed CLI flag | This skill does not use `--account`. If you wrote custom scripts, remove that flag (v3.76.0+). |
@@ -89,6 +95,8 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 | `/setup-coolify` not found in Claude Code | Wrong install depth or symlink missing | Verify `~/.claude/skills/setup-coolify/SKILL.md` exists at exactly that path. The repo root must BE the skill directory. |
 | `ModuleNotFoundError: No module named 'yaml'` | PyYAML not installed | `pip3 install pyyaml` |
 | Staging smoke test times out in GitHub Actions | Coolify deploy took longer than 6 minutes | Check Coolify UI for deploy logs. Likely cause: image pull from GHCR is slow or app crashed at start. |
+
+For more detail on any of these, see **[docs/troubleshooting.md](docs/troubleshooting.md)**.
 
 ---
 
