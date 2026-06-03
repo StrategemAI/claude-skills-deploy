@@ -75,22 +75,51 @@ is sufficient for most workloads. Ubuntu 22.04 LTS is the tested base image.
    ```bash
    ssh root@<ip>
    ```
+   > **Key permissions:** If you copied an SSH key from another machine (WSL, Windows,
+   > another Linux user), run `chmod 0600 ~/.ssh/<keyname>` first. SSH silently ignores
+   > keys with permissions wider than `0600`.
 3. Install Coolify:
    ```bash
    curl -fsSL https://cdn.coollabs.io/coolify/install.sh | sudo bash
    ```
    This installs Docker, Coolify, and sets up systemd. The install takes 2–5 minutes.
+
+   > **If step 1/9 hangs for more than 10 minutes:** Ubuntu's `needrestart` tool is
+   > prompting interactively and blocking apt. Fix it, then re-run the install script
+   > (it is idempotent):
+   > ```bash
+   > echo "\$nrconf{restart} = 'a';" | tee /etc/needrestart/conf.d/autorestart.conf
+   > curl -fsSL https://cdn.coollabs.io/coolify/install.sh | sudo bash
+   > ```
+
 4. Once the install completes, open `http://<ip>:8000` in a browser. Create your admin
    account on the first-run wizard.
-5. Enable HTTPS: navigate to Coolify **Settings → Configuration → HTTPS** and follow the
-   prompts to issue a Let's Encrypt certificate for your Coolify domain. You will need a
-   DNS A record pointing to the VPS IP first (e.g., `coolify.cicd.example.com → <ip>`).
+5. Set the Coolify URL: navigate to **Settings → Configuration → General** and set the
+   **URL** field to `https://coolify.<your-domain>`. This tells Coolify its own address
+   but does not automatically issue a certificate — HTTPS for the dashboard requires
+   Coolify's Traefik proxy to be running (see step 6 below).
+
+**Post-install: start the Traefik proxy**
+
+Coolify's Traefik proxy handles HTTPS for all deployed apps. It does not start
+automatically after install. Start it before provisioning any apps:
+
+```bash
+# On the VPS:
+cd /data/coolify/proxy && docker compose up -d
+```
+
+Or in the Coolify UI: **Servers → localhost → Proxy → Start Proxy**.
+
+> **Port conflict:** If another service (e.g., a standalone Caddy or nginx) already
+> owns ports 80/443, Traefik will fail to start. Make that service internal and route
+> it through Traefik. See **[docs/troubleshooting.md](./troubleshooting.md#bind-for-00000080-failed-port-is-already-allocated-when-starting-traefik)**.
 
 **Post-install: clear `allowed_ips`**
 
 By default Coolify may restrict API access to specific IPs. Before API calls from
 GitHub Actions (or your local machine) will work, open Coolify **Settings → Security**
-and clear `allowed_ips` (set to `*` or your known IP ranges). Leaving this at the
+and set `allowed_ips` to `0.0.0.0` (or leave it empty). Leaving this at the
 default value causes every API call to return HTTP 403 even with a valid token.
 
 ---
