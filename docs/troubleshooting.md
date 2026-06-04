@@ -53,6 +53,30 @@ If the authoritative nameservers don't match the Cloudflare zone where you added
 
 **Fix:** In your registrar (e.g., GoDaddy), update the nameservers to match the zone that contains your records. Cloudflare shows the assigned nameservers under **DNS → Nameservers** for each zone.
 
+### Records added to own Cloudflare zone instead of a collaborator's zone
+
+**Symptom:** You add A records in Cloudflare and they appear to save correctly, but the main domain or subdomains stop working. Other people's changes to DNS seem to take effect but yours don't.
+
+**Cause:** Multiple Cloudflare zones can exist for the same domain root (e.g., if you and a collaborator each have `strategem.ai` in separate Cloudflare accounts). Only the zone whose nameservers are active at the registrar will have its records served. If your registrar (e.g., GoDaddy) points to your collaborator's nameservers (`fred.ns.cloudflare.com` / `lia.ns.cloudflare.com`), records you add to your own zone (`myname.ns.cloudflare.com`) are silently ignored.
+
+**Diagnosis:**
+```bash
+dig +short NS <your-domain>     # shows which nameservers are active
+# Compare against what Cloudflare shows for each zone under DNS → Nameservers
+```
+
+**Fix:**
+1. Determine which zone is authoritative (matches registrar nameservers).
+2. Add all records to **that** zone, not your own.
+3. If you changed registrar nameservers to your zone by mistake: revert to the correct nameservers in the registrar immediately. DNS TTL on NS records is typically 24–48 hours but Cloudflare zones re-propagate quickly once the registrar is corrected.
+
+**Records needed for a typical Coolify deployment on a shared domain:**
+```
+coolify.<cicd-subdomain>   A   <vps-ip>   # Coolify dashboard
+*.<cicd-subdomain>         A   <vps-ip>   # wildcard for all CI/CD app subdomains
+<app>.<your-domain>        A   <vps-ip>   # production app (one per app)
+```
+
 ---
 
 ## Docker
@@ -101,6 +125,65 @@ Run `docker info` to confirm the group is active before running the E2E test or 
 ```bash
 gh api --method PATCH "/orgs/${GHCR_OWNER}/packages/container/my-image" -f visibility=public
 ```
+
+### Coolify VPS cannot pull the image — `unauthorized` or `pull access denied`
+
+**Symptom:** Coolify deploy fails with `Error: pulling image ... unauthorized: unauthenticated` or `pull access denied for ghcr.io/...`. The image was just pushed successfully by GitHub Actions.
+
+**Cause:** When GitHub Actions pushes a new Docker image to GHCR for a GitHub **org**, the package is **private by default**. The Coolify VPS cannot pull private GHCR packages without a configured credential helper.
+
+**Fix:** Make the GHCR package public. In GitHub:
+1. Go to `https://github.com/orgs/<org>/packages/container/<package-name>/settings`
+2. Scroll to **Danger Zone → Change package visibility**
+3. Set to **Public** and confirm.
+
+This only needs to be done once per package (not per tag). Future pushes to the same package name inherit the public visibility.
+
+> **Alternative:** Configure a GHCR pull secret on your Coolify VPS (Settings → Registries). But making the package public is simpler for non-sensitive images.
+
+---
+
+## GitHub Actions / CI
+
+### Wrong Dockerfile stage built — dev image deployed instead of production
+
+**Symptom:** Container starts but crashes immediately, or the dev reload loop runs but crashes because source isn't mounted as a volume. Logs show errors like `[WatchFiles] watching ...` then file-not-found errors.
+
+**Cause:** `docker/build-push-action` without a `target:` field builds the **last** stage in the Dockerfile. If your Dockerfile ends with a `dev` stage (a common pattern for separating local dev from production), CI silently builds and pushes the wrong image.
+
+**Fix:** Add `target: production` (or whatever your production stage is named) to the build step:
+
+```yaml
+- uses: docker/build-push-action@v6
+  with:
+    context: .
+    file: ./Dockerfile
+    target: production      # <-- required for multi-stage Dockerfiles
+    push: true
+    tags: ghcr.io/...
+```
+
+### Smoke test fails with TLS error on first deploy to a new domain
+
+**Symptom:** The staging smoke test fails on the very first deploy to a new domain. The `curl` command returns a TLS/certificate error (`SSL certificate problem: unable to get local issuer certificate` or similar), even though the app is running.
+
+**Cause:** Let's Encrypt certificate issuance takes 10–60 seconds after Traefik first picks up the new domain. If the smoke test runs immediately after the deploy is triggered, the cert may not be ready yet.
+
+**Fix:** Add the `-k` flag to `curl` in the smoke test step. This tests app availability without validating the certificate:
+
+```bash
+curl -sfSk "https://$STAGING_DOMAIN/health" -o /dev/null
+```
+
+This is safe in CI — the certificate validity is enforced by the end user's browser and by production traffic; the smoke test only needs to confirm the app is reachable.
+
+### Node.js 20 deprecation warnings from GitHub Actions
+
+**Symptom:** GitHub Actions workflow shows annotation warnings like `Node.js 20 actions are deprecated` for `actions/checkout@v4`, `docker/build-push-action@v6`, `docker/login-action@v3`, `actions/delete-package-versions@v5`.
+
+**Cause:** GitHub is migrating runners to Node.js 24. Node.js 20 actions will stop working after **September 16, 2026** (forced to Node.js 24 starting June 16, 2026).
+
+**Fix:** Update the actions to their latest versions in `.github/workflows/deploy.yml`. Check each action's releases page for the Node.js 24-compatible version. As of mid-2026, upgrading `@v4` → `@v5` for checkout and `@v6` → `@v7` for build-push should resolve the warnings.
 
 ---
 
@@ -232,6 +315,54 @@ docker logs coolify-proxy --since 1m 2>&1 | grep -i "certif\|acme\|ERR"
 ```
 
 A valid cert should appear in `acme.json` for the domain with an `Issuer` from Let's Encrypt.
+
+### 502 Bad Gateway — container healthy but requests fail
+
+**Symptom:** Coolify shows the app as `running:healthy` and the deploy log shows success, but accessing the app URL returns `502 Bad Gateway`. The container is running and the app responds on its internal port.
+
+**Cause:** Coolify generates Traefik routing labels based on `ports_exposes` in the database. This defaults to `3000`. If your app listens on a different port (e.g., `8000`), Traefik routes traffic to the wrong port and gets connection refused.
+
+**Diagnosis:** On the VPS, inspect the container labels:
+```bash
+docker inspect <container-id> | grep loadbalancer.server.port
+```
+
+**Fix (permanent):** Add `port: <your-port>` to `coolify.yaml`, then re-run `/setup-coolify` to update the Coolify database. The next deploy will generate the correct Traefik labels automatically.
+
+**Fix (immediate, for a running container without redeploying):** Patch the generated docker-compose file on the VPS and recreate the container:
+```bash
+APP_UUID=<your-app-uuid>
+sed -i 's/loadbalancer.server.port=3000/loadbalancer.server.port=8000/g; s/{{upstreams 3000}}/{{upstreams 8000}}/g' \
+  /data/coolify/applications/$APP_UUID/docker-compose.yaml
+cd /data/coolify/applications/$APP_UUID && docker compose up -d --force-recreate
+```
+
+> **Note:** `/data/coolify/applications/` on the host is the same path as `/var/www/html/storage/app/applications/` inside the Coolify container (bind-mounted volume). Either path works for edits.
+
+### Container marked unhealthy immediately after deploy
+
+**Symptom:** Coolify shows the container as `unhealthy` right after deployment. The health check log shows `connection refused` or `404 Not Found` on the health endpoint.
+
+**Cause:** The default health check configuration in `provision.sh` was `port=3000` and `path=/api/health`. Apps using different values (e.g., `port=8000`, `path=/health`) will always fail the check and be restarted in a loop.
+
+**Fix:** Add the correct values to `coolify.yaml`:
+```yaml
+port: 8000
+health_check_path: /health
+```
+
+Then re-run `/setup-coolify` — it will PATCH the Coolify app with the correct health check settings. The next deploy will use these values.
+
+**Immediate fix via API (without waiting for a new deploy):**
+```bash
+APP_UUID=<your-app-uuid>
+curl -sfS -X PATCH "http://<coolify-host>:8000/api/v1/applications/$APP_UUID" \
+  -H "Authorization: Bearer <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"health_check_port": 8000, "health_check_path": "/health"}'
+```
+
+Then trigger a redeploy from the Coolify UI.
 
 ### Pre-existing Caddy service returns "Client sent an HTTP request to an HTTPS server"
 

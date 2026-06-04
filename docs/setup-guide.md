@@ -263,6 +263,16 @@ The generated `.github/workflows/deploy.yml` requires two GitHub Actions secrets
    gh api repos/{owner}/{repo} --method PATCH --field default_workflow_permissions=write
    ```
 
+4. **Make the GHCR package public (org repos only).** After the first CI run pushes a Docker
+   image for a GitHub org, the package is **private by default**. The Coolify VPS cannot pull
+   private packages without authentication. Make it public once:
+   - Go to `https://github.com/orgs/<org>/packages/container/<package-name>/settings`
+   - Under **Danger Zone**, change visibility to **Public**.
+
+   This only needs to be done once — future pushes to the same package name inherit the
+   public visibility. (For personal-account repos, packages default to the repo's visibility
+   and usually don't require this step.)
+
 ---
 
 ## Step 6b: Store GHCR_TOKEN for local E2E testing
@@ -325,6 +335,17 @@ You will be prompted for:
 - Build context (default `.`; set to `./skillmap` only for monorepos with a nested app)
 - Dockerfile path (default `./Dockerfile`)
 - Env var keys (space-separated list of all keys your app needs)
+
+**After `init.sh` completes, open `coolify.yaml` and verify two fields:**
+
+```yaml
+port: 8000              # the port your app listens on (default: 3000)
+health_check_path: /health   # your app's health endpoint (default: /api/health)
+```
+
+Edit these to match your app before running `/setup-coolify`. Getting them wrong causes either a Bad Gateway (wrong port → Traefik routes to the wrong place) or an unhealthy container (wrong health path → Coolify restart loops).
+
+> **Multi-stage Dockerfile:** If your Dockerfile has multiple stages (e.g., `production` and `dev`), check that `.github/workflows/deploy.yml` includes `target: production` in the build step. Without it, CI builds the last stage, which is often a dev image that expects source mounted as a volume.
 
 After the bootstrapper completes, validate and provision:
 ```bash

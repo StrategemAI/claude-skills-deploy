@@ -95,6 +95,12 @@ See **[docs/schema.md](./docs/schema.md)** for full `coolify.yaml` and `coolify.
 | `/setup-coolify` not found in Claude Code | Wrong install depth or symlink missing | Verify `~/.claude/skills/setup-coolify/SKILL.md` exists at exactly that path. The repo root must BE the skill directory. |
 | `ModuleNotFoundError: No module named 'yaml'` | PyYAML not installed | `pip3 install pyyaml` |
 | Staging smoke test times out in GitHub Actions | Coolify deploy took longer than 6 minutes | Check Coolify UI for deploy logs. Likely cause: image pull from GHCR is slow or app crashed at start. |
+| Smoke test fails with TLS error on very first deploy | Let's Encrypt cert not yet issued when smoke test runs | Add `-k` to `curl` in the smoke test step — tests availability, not cert validity |
+| Container pull fails — `unauthorized` on VPS after CI push succeeds | GHCR org packages are private by default; VPS has no pull credentials | Make the package public at `github.com/orgs/<org>/packages/container/<name>/settings` |
+| `502 Bad Gateway` despite container showing `running:healthy` | Traefik labels have wrong `loadbalancer.server.port` (default 3000; your app uses a different port) | Add `port: <your-port>` to `coolify.yaml`, re-run `/setup-coolify`, trigger a new deploy |
+| Container marked `unhealthy` immediately after deploy | Default health check port (3000) or path (`/api/health`) doesn't match your app | Add `port:` and `health_check_path:` to `coolify.yaml`, re-run `/setup-coolify` |
+| Dev image deployed in CI instead of production image | Multi-stage Dockerfile without `target:` in build step builds the last stage | Add `target: production` to `docker/build-push-action` in `.github/workflows/deploy.yml` |
+| DNS records added but main domain breaks / other team's records take effect, yours don't | Records added to wrong Cloudflare zone (yours vs. collaborator's); registrar nameservers point to theirs | `dig +short NS <domain>` to confirm active zone; add records only to the zone whose nameservers are in the registrar |
 
 For more detail on any of these, see **[docs/troubleshooting.md](docs/troubleshooting.md)**.
 
