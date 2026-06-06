@@ -85,7 +85,7 @@ for rec in dns_records:
     rec_id = rec.get('record_id', '')
     if name and rec_id:
         tsv_lines.append(f"{name}\t{rec_id}")
-print(f"DNS_RECORDS_TSV={chr(30).join(tsv_lines)}")
+print(f'DNS_RECORDS_TSV="{chr(30).join(tsv_lines)}"')
 PY
 ) || { echo "$_fields" >&2; exit 1; }
 eval "$_fields"

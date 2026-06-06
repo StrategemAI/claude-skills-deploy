@@ -64,7 +64,7 @@ running `/setup-coolify`:
 | Coolify dashboard | A | `coolify.<your-domain>` | `<vps-ip>` | Required for HTTPS on Coolify UI |
 | Deployed app — staging | A | `*.<base-domain>` | `<vps-ip>` | Wildcard covers all `<app>-staging.<base-domain>` subdomains |
 | Deployed app — production | A | `<app>.<your-domain>` | `<vps-ip>` | One record per production app |
-| E2E test subdomains | — | (covered by wildcard) | — | `csd-e2e-*-staging.<base-domain>` resolves via wildcard |
+| E2E test subdomains | — | (covered by wildcard or automated DNS) | — | `csd-hello-test-*-staging.<base-domain>` — resolved by wildcard A record, or created automatically per-run when `dns_default` is set in `coolify.json` |
 
 **Reference implementation** for `streamlinity.com` on Vultr IP `149.248.4.46`:
 
@@ -222,7 +222,7 @@ below (see [docs/schema.md](./schema.md) for the canonical field reference):
 }
 ```
 
-Concrete example for the reference implementation:
+Concrete example for the reference implementation (with optional DNS fields):
 ```json
 {
   "servers": {
@@ -230,11 +230,20 @@ Concrete example for the reference implementation:
       "url": "https://coolify.cicd.streamlinity.com",
       "api_key": "xOIN...",
       "doppler_account": "streamlinity",
-      "ssh_host": "v_cicd_stream"
+      "ssh_host": "v_cicd_stream",
+      "cloudflare_api_token": "cfut_...",
+      "dns_default": {
+        "provider": "cloudflare",
+        "zone_name": "streamlinity.com",
+        "credential_source": "coolify_json",
+        "credential_key": "cloudflare_api_token"
+      }
     }
   }
 }
 ```
+
+The `cloudflare_api_token` and `dns_default` fields are optional. Add them if you want automated DNS provisioning. `dns_default` is also read by `test/e2e.sh` to inject a `dns:` block into E2E test runs, so DNS record creation and cleanup are exercised automatically during testing. See [docs/schema.md](./schema.md) for the full field reference.
 
 **Secure the file immediately:**
 ```bash
@@ -338,6 +347,10 @@ You will be prompted for:
 - GHCR registry image (e.g., `ghcr.io/anatesan-stream/ai-upskilling`)
 - Staging domain (e.g., `skillmap-staging.cicd.streamlinity.com`)
 - Production domain (e.g., `skillmap.cicd.streamlinity.com`)
+- DNS provider (default `cloudflare`; enter `none` to skip automated DNS)
+- DNS zone name (e.g., `streamlinity.com` — derived from production domain by default)
+- DNS credential source (`doppler` or `coolify_json`)
+- DNS credential key (name of the Doppler secret or `coolify.json` field holding your API token)
 - Build context (default `.`; set to `./skillmap` only for monorepos with a nested app)
 - Dockerfile path (default `./Dockerfile`)
 - Env var keys (space-separated list of all keys your app needs)

@@ -3,8 +3,11 @@
 #
 # Creates a throwaway Coolify project + Doppler project, provisions staging +
 # production apps, triggers staging + production deploys, smoke-tests the live
-# staging URL, and cleans up on failure via a trap; on success leaves both
-# apps running.
+# staging URL. On success leaves everything running (DNS, apps, Doppler) so the
+# operator can inspect the live deployment; run cleanup-deployment.sh when done.
+# On failure cleans up all resources (DNS, Coolify apps, Doppler, Docker volumes).
+# Before starting, sweeps for stale csd-hello-test-* resources from prior runs and
+# removes them so each test starts from a clean slate.
 #
 # Usage:
 #   bash test/e2e.sh --server hetzner-strategem       # test against a specific server
@@ -33,7 +36,7 @@ source "$SKILL_DIR/scripts/lib-dns-api.sh"
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
-TEST_PROJECT="csd-e2e-$(date +%Y-%m-%d-%H%M%S)"
+TEST_PROJECT="csd-hello-test-$(date +%Y%m%d-%H%M%S)"
 KEEP_ON_EXIT=false
 # E2E_SERVER:      Required. Coolify server alias key from ~/.claude/coolify.json
 #                  (an alias, NOT a raw hostname). The alias maps to the Coolify
@@ -228,7 +231,11 @@ PY
   echo "  report written: $REPORT_FILE"
 }
 
-# ── Cleanup (runs on failure via EXIT trap; skipped on success) ─────────────────
+# ── Cleanup (EXIT trap) ────────────────────────────────────────────────────────
+# Success:    leave everything running (DNS, apps, Doppler); operator uses
+#             cleanup-deployment.sh when done inspecting.
+# --keep:     failure but operator wants to inspect; leave everything running.
+# Failure:    full teardown — DNS, Coolify apps, Docker volumes, Doppler.
 
 cleanup() {
   local exit_code=$?
@@ -242,59 +249,46 @@ cleanup() {
   echo " Passed: $PASS  Failed: $FAIL"
   echo "═══════════════════════════════════"
 
-  # DNS records are always cleaned up, even with --keep (no orphaned records policy).
-  # Coolify apps + Doppler project are skipped when --keep is set (operator inspects live state).
-  if [ -n "$DNS_PROVIDER" ] && [ ${#DNS_RECORDS[@]} -gt 0 ]; then
-    echo ""
-    echo "─── DNS cleanup (unconditional — runs even with --keep) ───"
-    for entry in "${DNS_RECORDS[@]}"; do
-      IFS=':' read -r dns_fqdn dns_rec_id <<< "$entry"
-      dns_delete_record "$DNS_ZONE_ID" "$dns_rec_id" \
-        && echo "  ✓ deleted DNS record $dns_fqdn ($dns_rec_id)" \
-        || echo "  ⚠ could not delete DNS record $dns_fqdn ($dns_rec_id)"
-    done
-  fi
-
-  if $KEEP_ON_EXIT; then
-    echo ""
-    echo "─── --keep: skipping Coolify/Doppler cleanup ───"
-    echo "  Coolify project: $TEST_PROJECT (uuid: ${COOLIFY_PROJECT_UUID:-not_created})"
-    echo "  Staging app UUID: ${STG_APP_UUID:-not_created}"
-    echo "  Production app UUID: ${PRD_APP_UUID:-not_created}"
-    echo "  Doppler project: $TEST_PROJECT (created: $DOPPLER_CREATED)"
-    echo "  Work dir: ${WORK_DIR:-none}"
-    echo ""
-    echo "  Manual cleanup:"
-    if [ -n "$STG_APP_UUID" ]; then
-      echo "    curl -X DELETE $COOLIFY_URL/api/v1/applications/$STG_APP_UUID -H 'Authorization: Bearer \$KEY'"
-    fi
-    if [ -n "$PRD_APP_UUID" ]; then
-      echo "    curl -X DELETE $COOLIFY_URL/api/v1/applications/$PRD_APP_UUID -H 'Authorization: Bearer \$KEY'"
-    fi
-    if [ -n "$COOLIFY_PROJECT_UUID" ]; then
-      echo "    curl -X DELETE $COOLIFY_URL/api/v1/projects/$COOLIFY_PROJECT_UUID -H 'Authorization: Bearer \$KEY'"
-    fi
-    if $DOPPLER_CREATED; then
-      echo "    doppler projects delete $TEST_PROJECT --yes"
-    fi
-    exit $exit_code
-  fi
-
-  # On success, skip teardown — operator inspects live deployment via the staging URL.
-  # The completion summary (staging URL, report path, cleanup command) is printed
-  # in the main body BEFORE exit 0 fires the trap. Here we only print the
-  # "deployment is live" reminder so it appears after the Test Results banner.
+  # Success — leave everything running so the operator can inspect the live URLs.
   if [ "$exit_code" -eq 0 ]; then
     echo ""
-    echo "  Deployment is live — staging and production apps left running."
-    echo "  Run cleanup when ready:"
+    echo "  Deployment is live — DNS, apps, and Doppler project left running."
+    echo "  Run cleanup when done:"
     echo "    bash test/cleanup-deployment.sh ${REPORT_FILE:-<report-file>}"
     exit 0
   fi
 
+  # --keep on failure — leave everything running for debugging; print manual cleanup hints.
+  if $KEEP_ON_EXIT; then
+    echo ""
+    echo "─── --keep: leaving all resources running for inspection ───"
+    echo "  Staging URL:        https://${STAGING_DOMAIN:-<not_provisioned>}"
+    echo "  Production URL:     https://${PROD_DOMAIN:-<not_provisioned>}"
+    echo "  Coolify project:    $TEST_PROJECT (uuid: ${COOLIFY_PROJECT_UUID:-not_created})"
+    echo "  Staging app UUID:   ${STG_APP_UUID:-not_created}"
+    echo "  Production app UUID:${PRD_APP_UUID:-not_created}"
+    echo "  Doppler project:    $TEST_PROJECT (created: $DOPPLER_CREATED)"
+    if [ -n "${REPORT_FILE:-}" ] && [ -f "${REPORT_FILE:-}" ]; then
+      echo ""
+      echo "  Run cleanup when done:"
+      echo "    bash test/cleanup-deployment.sh $REPORT_FILE"
+    fi
+    exit $exit_code
+  fi
+
+  # Failure — full teardown: DNS first, then Coolify, then volumes, then Doppler.
   step "Cleanup"
 
-  # Delete Coolify apps first, then project
+  if [ -n "${DNS_PROVIDER:-}" ] && [ ${#DNS_RECORDS[@]} -gt 0 ]; then
+    echo "  Removing DNS records..."
+    for entry in "${DNS_RECORDS[@]}"; do
+      IFS=':' read -r dns_fqdn dns_rec_id <<< "$entry"
+      dns_delete_record "$DNS_ZONE_ID" "$dns_rec_id" \
+        && echo "    ✓ deleted $dns_fqdn ($dns_rec_id)" \
+        || echo "    ⚠ could not delete $dns_fqdn ($dns_rec_id)"
+    done
+  fi
+
   if [ -n "$STG_APP_UUID" ]; then
     coolify_curl DELETE "/applications/$STG_APP_UUID" >/dev/null 2>&1 \
       && echo "  ✓ deleted staging app $STG_APP_UUID" \
@@ -311,7 +305,6 @@ cleanup() {
       || echo "  ⚠ could not delete Coolify project $COOLIFY_PROJECT_UUID (remove manually)"
   fi
 
-  # Remove Doppler fallback-cache Docker volumes from the VPS (created by provision.sh via SSH)
   if [ -n "$SSH_HOST" ]; then
     for uuid in "$STG_APP_UUID" "$PRD_APP_UUID"; do
       [ -z "$uuid" ] && continue
@@ -321,14 +314,12 @@ cleanup() {
     done
   fi
 
-  # Delete Doppler project
   if $DOPPLER_CREATED; then
     doppler projects delete "$TEST_PROJECT" --yes >/dev/null 2>&1 \
       && echo "  ✓ deleted Doppler project $TEST_PROJECT" \
       || echo "  ⚠ could not delete Doppler project $TEST_PROJECT (remove manually at doppler.com)"
   fi
 
-  # Remove temp work directory
   if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
     rm -rf "$WORK_DIR"
     echo "  ✓ removed work dir $WORK_DIR"
@@ -337,6 +328,134 @@ cleanup() {
   exit $exit_code
 }
 trap cleanup EXIT
+
+# ── Pre-run stale resource sweep ───────────────────────────────────────────────
+
+purge_stale_e2e_resources() {
+  # Delete any csd-hello-test-* resources left over from a previous run (DNS records,
+  # Coolify apps, Doppler projects, Docker volumes). Scans three sources:
+  #   1. test/results/*.json reports that still have live Coolify projects
+  #   2. Coolify apps matching csd-hello-test-* with no corresponding report
+  #   3. DNS A records matching csd-hello-test-* in the configured zone
+  local found=0
+
+  # 1. Reports matching this server alias whose Coolify project is still alive
+  local results_dir="$SKILL_DIR/test/results"
+  if [ -d "$results_dir" ]; then
+    while IFS= read -r report; do
+      [ -f "$report" ] || continue
+      local rpt_alias rpt_proj_uuid
+      rpt_alias=$(python3 -c "
+import json
+d = json.load(open('$report'))
+print(d.get('server_alias', ''))
+" 2>/dev/null || echo "")
+      [ "$rpt_alias" != "$SERVER_ALIAS" ] && continue
+
+      rpt_proj_uuid=$(python3 -c "
+import json
+d = json.load(open('$report'))
+print(d.get('coolify_project_uuid') or d.get('project_uuid', ''))
+" 2>/dev/null || echo "")
+      [ -z "$rpt_proj_uuid" ] && continue
+
+      local proj_alive
+      proj_alive=$(coolify_curl GET "/projects/$rpt_proj_uuid" 2>/dev/null \
+        | python3 -c "
+import json, sys
+try: print('yes' if json.load(sys.stdin).get('uuid') else 'no')
+except: print('no')
+" 2>/dev/null || echo "no")
+
+      if [ "$proj_alive" = "yes" ]; then
+        local rpt_name
+        rpt_name=$(python3 -c "
+import json
+print(json.load(open('$report')).get('doppler_project', '$report'))
+" 2>/dev/null || echo "$report")
+        echo "  stale: $rpt_name — cleaning up via report"
+        bash "$SKILL_DIR/test/cleanup-deployment.sh" "$report" 2>&1 | sed 's/^/    /' || true
+        found=$((found+1))
+      fi
+    done < <(find "$results_dir" -name "*.json" -type f | sort)
+  fi
+
+  # 2. Orphaned Coolify apps with no matching report
+  local orphan_uuids
+  orphan_uuids=$(coolify_curl GET "/applications" 2>/dev/null | python3 -c "
+import json, sys
+try:
+    apps = json.load(sys.stdin)
+    if isinstance(apps, dict): apps = apps.get('data', [])
+    for app in (apps or []):
+        if app.get('name', '').startswith('csd-hello-test-'):
+            print(app['uuid'])
+except: pass
+" 2>/dev/null || echo "")
+
+  if [ -n "$orphan_uuids" ]; then
+    while IFS= read -r uuid; do
+      [ -z "$uuid" ] && continue
+      echo "  orphaned app (no report): $uuid — deleting"
+      coolify_curl DELETE "/applications/$uuid" >/dev/null 2>&1 \
+        && echo "    ✓ deleted" || echo "    ⚠ could not delete $uuid"
+      found=$((found+1))
+    done <<< "$orphan_uuids"
+  fi
+
+  # 3. Orphaned DNS A records matching csd-e2e-* in the configured zone
+  local _pre_dns_default
+  _pre_dns_default=$(python3 -c "
+import json, sys
+d = json.load(open('$HOME/.claude/coolify.json'))
+dns_def = d.get('servers', {}).get('$SERVER_ALIAS', {}).get('dns_default', {})
+if not dns_def or dns_def.get('provider', 'none') == 'none':
+    print('none'); sys.exit(0)
+print(json.dumps(dns_def))
+" 2>/dev/null || echo "none")
+
+  if [ "$_pre_dns_default" != "none" ]; then
+    eval "$(echo "$_pre_dns_default" | python3 -c "
+import json, sys
+d = json.loads(sys.stdin.read())
+print(f\"DNS_PROVIDER={d.get('provider','none')}\")
+print(f\"DNS_ZONE_NAME={d.get('zone_name','')}\")
+print(f\"DNS_CREDENTIAL_SOURCE={d.get('credential_source','doppler')}\")
+print(f\"DNS_CREDENTIAL_KEY={d.get('credential_key','')}\")
+")"
+    export DNS_PROVIDER DNS_ZONE_NAME DNS_CREDENTIAL_SOURCE DNS_CREDENTIAL_KEY
+    dns_load_credentials_from_env 2>/dev/null || true
+
+    if [ -n "${DNS_API_TOKEN:-}" ] && [ -n "${DNS_ZONE_NAME:-}" ]; then
+      local _pre_zone_id
+      _pre_zone_id=$(dns_cf_get_zone_id "$DNS_ZONE_NAME" 2>/dev/null || echo "")
+      if [ -n "$_pre_zone_id" ]; then
+        local orphan_recs
+        orphan_recs=$(dns_cf_curl GET "/zones/${_pre_zone_id}/dns_records?per_page=100&type=A" 2>/dev/null \
+          | python3 -c "
+import json, sys
+try:
+    for r in json.load(sys.stdin).get('result', []):
+        if r.get('name','').startswith('csd-hello-test-'):
+            print(f\"{r['id']} {r['name']}\")
+except: pass
+" 2>/dev/null || echo "")
+        if [ -n "$orphan_recs" ]; then
+          while IFS=' ' read -r rec_id rec_name; do
+            [ -z "$rec_id" ] && continue
+            echo "  stale DNS record: $rec_name — deleting"
+            dns_cf_delete_record "$_pre_zone_id" "$rec_id" \
+              && echo "    ✓ deleted $rec_name" || echo "    ⚠ could not delete $rec_name"
+            found=$((found+1))
+          done <<< "$orphan_recs"
+        fi
+      fi
+      unset DNS_API_TOKEN
+    fi
+  fi
+
+  [ "$found" -eq 0 ] && echo "  none found — clean slate"
+}
 
 # ── Prerequisites ──────────────────────────────────────────────────────────────
 
@@ -391,7 +510,12 @@ fi
 
 # ── Work directory ─────────────────────────────────────────────────────────────
 
-WORK_DIR=$(mktemp -d -t csd-e2e-XXXX)
+WORK_DIR=$(mktemp -d -t csd-hello-test-XXXX)
+
+# ── Step 0: Pre-run cleanup of stale csd-hello-test-* resources ───────────────
+
+step "Step 0: Pre-run sweep for stale test deployments"
+purge_stale_e2e_resources
 
 # ── Step 1: Coolify API reachable ──────────────────────────────────────────────
 
@@ -773,15 +897,55 @@ write_report
 # ── Completion summary (success path) ─────────────────────────────────────────
 
 echo ""
-echo "═══════════════════════════════════════════════════════════════════════════════"
-echo " Deployment complete"
-echo "═══════════════════════════════════════════════════════════════════════════════"
-echo "  Staging URL    : https://${STAGING_DOMAIN}"
-echo "  Production URL : https://${PROD_DOMAIN}"
-echo "  Report         : $REPORT_FILE"
+# Resolve VPS IP for summary (coolify.json vps_ip field → SSH fallback)
+VPS_IP=$(python3 -c "
+import json
+d = json.load(open('$HOME/.claude/coolify.json'))
+print(d.get('servers', {}).get('$SERVER_ALIAS', {}).get('vps_ip', ''))
+" 2>/dev/null || echo "")
+if [ -z "$VPS_IP" ] && [ -n "$SSH_HOST" ]; then
+  VPS_IP=$(ssh "$SSH_HOST" "curl -s -4 ifconfig.me" 2>/dev/null || echo "")
+fi
+
 echo ""
-echo "  Next step — clean up when ready:"
-echo "    bash test/cleanup-deployment.sh $REPORT_FILE"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo " Deployment complete — inspect before cleaning up"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo ""
+echo "  URLs"
+echo "  ────────────────────────────────────────────────────────────────────────────"
+echo "  Staging    : https://${STAGING_DOMAIN}"
+echo "  Production : https://${PROD_DOMAIN}"
+echo ""
+echo "  DNS records created"
+echo "  ────────────────────────────────────────────────────────────────────────────"
+if [ ${#DNS_RECORDS[@]} -gt 0 ]; then
+  _vps="${VPS_IP:-149.248.4.46}"
+  _args=("$_vps")
+  for entry in "${DNS_RECORDS[@]}"; do _args+=("$entry"); done
+  python3 -c "
+import sys
+target = sys.argv[1]
+rows = [a.split(':', 1) for a in sys.argv[2:]]
+max_h = max(max(len(r[0]) for r in rows), len('HOSTNAME'))
+max_t = max(len(target), len('TARGET'))
+max_i = max(max(len(r[1]) for r in rows), len('RECORD ID'))
+hfmt = '  {:<4}  {:<{mh}}  {:<{mt}}  {}'
+sep  = '  ' + '─'*4 + '  ' + '─'*max_h + '  ' + '─'*max_t + '  ' + '─'*max_i
+print(hfmt.format('TYPE', 'HOSTNAME', 'TARGET', 'RECORD ID', mh=max_h, mt=max_t))
+print(sep)
+for fqdn, rec_id in rows:
+    print(hfmt.format('A', fqdn, target, rec_id, mh=max_h, mt=max_t))
+" "${_args[@]}"
+else
+  echo "  (none — dns: block not configured)"
+fi
+echo ""
+echo "  Cleanup"
+echo "  ────────────────────────────────────────────────────────────────────────────"
+echo "  bash test/cleanup-deployment.sh $REPORT_FILE"
+echo ""
+echo "  (next e2e run will auto-clean if you forget)"
 echo "═══════════════════════════════════════════════════════════════════════════════"
 
 # ── Done ───────────────────────────────────────────────────────────────────────

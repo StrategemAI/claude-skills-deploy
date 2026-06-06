@@ -153,6 +153,9 @@ using the schema below.
 | Field | Default | Description |
 |-------|---------|-------------|
 | `server_name` | `"localhost"` | Coolify-side name of the managed Docker host node. The Coolify UI lets you rename the node from the default `"localhost"` (Settings → Servers). `provision.sh` uses this value to look up the server UUID via `GET /servers`. Set this only if your Coolify instance has a custom server name; otherwise omit it and the default applies. |
+| `vps_ip` | — | Public IPv4 address of the Coolify VPS. When set, `provision.sh` uses this value directly instead of resolving it via SSH + `ifconfig.me` on every run. Optional but recommended to avoid an SSH round-trip on re-runs. Example: `"149.248.4.46"`. |
+| `cloudflare_api_token` | — | Cloudflare User API Token with **Zone: DNS: Edit** permission scoped to the target zone. Only required when `dns.credential_source: coolify_json` in `coolify.yaml`. Alternatively, store the token in Doppler and set `credential_source: doppler`. |
+| `dns_default` | — | Object read by `test/e2e.sh` to inject a `dns:` block into E2E test runs. When present, every test run creates and deletes real DNS records, exercising the full DNS code path automatically. Structure mirrors the `dns:` block in `coolify.yaml` — see the **Optional DNS block** section above. Example below. |
 
 ---
 
@@ -232,7 +235,15 @@ each `coolify.yaml` selects which entry to use.
       "url": "https://coolify.cicd.streamlinity.com",
       "api_key": "REDACTED",
       "doppler_account": "streamlinity",
-      "ssh_host": "v_cicd_stream"
+      "ssh_host": "v_cicd_stream",
+      "vps_ip": "149.248.4.46",
+      "cloudflare_api_token": "cfut_...",
+      "dns_default": {
+        "provider": "cloudflare",
+        "zone_name": "streamlinity.com",
+        "credential_source": "coolify_json",
+        "credential_key": "cloudflare_api_token"
+      }
     },
     "hetzner-strategem": {
       "url": "https://coolify.cicd.strategem.ai",

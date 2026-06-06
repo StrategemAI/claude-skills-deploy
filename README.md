@@ -223,17 +223,19 @@ bash test/e2e.sh --server <alias> --keep                   # skip cleanup on fai
 
 The test exercises `validate.sh` → `provision.sh` → deploy trigger → deployment API polling → HTTPS smoke test (`/api/health` HTTP 200 + body check).
 
-**On success:** staging and production apps are left running. A report file is written to `test/results/YYYYMMDDHHMMSS.json`. The staging URL is printed at the end — open it in a browser to confirm the hello-world deployment is live.
+**On success:** staging and production apps, DNS records, and Doppler project are all left running. A report file is written to `test/results/YYYYMMDDHHMMSS.json`. The completion summary prints the staging and production URLs, the DNS records created, and the exact cleanup command — open the URLs in a browser to confirm the deployment is live.
 
-**On failure:** all Coolify + Doppler resources are torn down automatically via `trap EXIT`. Use `--keep` to suppress teardown and inspect the failure state manually. The report is written regardless of outcome.
+**On failure:** all resources (DNS records, Coolify apps, Docker volumes, Doppler project) are torn down automatically via `trap EXIT`. Use `--keep` to suppress teardown and inspect the broken state manually.
+
+**Pre-run sweep:** before each run, `e2e.sh` scans for stale `csd-hello-test-*` resources from previous runs (via reports, Coolify API, and DNS zone) and deletes them automatically. If you forgot to run cleanup after a previous test, the next run starts clean.
 
 ### Phase 2: Inspect
 
-After a successful run, the deployment is live. Browse to the staging URL printed in the output:
+After a successful run, the deployment is live. The completion summary prints both URLs directly. You can also browse them:
 
 ```
-https://<test-project>-staging.<your-base-domain>/api/health   → 200 OK
-https://<test-project>-staging.<your-base-domain>/             → hello-world page
+https://csd-hello-test-<timestamp>-staging.<your-base-domain>/api/health   → 200 OK
+https://csd-hello-test-<timestamp>-production.<your-base-domain>/           → hello-world page
 ```
 
 This is your proof that the full provision → deploy → health-check loop works end-to-end against real infrastructure.
@@ -249,11 +251,12 @@ bash test/cleanup-deployment.sh test/results/YYYYMMDDHHMMSS.json
 **What the report contains (the handoff):** `test/e2e.sh` writes a JSON file containing every identifier needed to tear down the test run — the Coolify project UUID, staging and production app UUIDs, Docker volume naming root, Doppler project slug, server alias, and SSH host. The cleanup script reads this file and requires nothing else from the operator.
 
 **What cleanup deletes** (in order, to satisfy Coolify's dependency rules):
-1. Staging app (Coolify DELETE `/applications/<uuid>`)
-2. Production app (Coolify DELETE `/applications/<uuid>`)
-3. Coolify project (retried up to 3× after apps are removed)
-4. Docker volumes on the VPS via SSH (`<app-uuid>-doppler-cache` × 2)
-5. Doppler project (`doppler projects delete <slug>`)
+1. DNS A records (Cloudflare API, record IDs from report)
+2. Staging app (Coolify DELETE `/applications/<uuid>`)
+3. Production app (Coolify DELETE `/applications/<uuid>`)
+4. Coolify project (retried up to 3× after apps are removed)
+5. Docker volumes on the VPS via SSH (`<app-uuid>-doppler-cache` × 2)
+6. Doppler project (`doppler projects delete <slug>`)
 
 The cleanup script is idempotent — re-running it against the same report is safe even if some resources were already deleted.
 
