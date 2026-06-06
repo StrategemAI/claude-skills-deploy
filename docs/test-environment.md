@@ -75,7 +75,7 @@ GitHub Actions workflow `push-test-image.yml` builds and pushes the image using
 `GITHUB_TOKEN` (no separate PAT required). Trigger it manually:
 
 ```bash
-gh workflow run push-test-image.yml --repo anatesan-stream/claude-skills-deploy
+gh workflow run push-test-image.yml --repo Streamlinity/claude-skills-deploy
 ```
 
 Or it runs automatically on any push to `main` that modifies `test/hello-world/`.
@@ -104,7 +104,7 @@ Requires a GitHub PAT with `write:packages, read:packages, delete:packages` scop
 
 **Verify the image is pullable** before running the test:
 ```bash
-docker pull ghcr.io/anatesan-stream/csd-hello-world:latest
+docker pull ghcr.io/streamlinity/csd-hello-world:latest
 ```
 
 ### 4. Required environment variables
@@ -116,7 +116,7 @@ a specific error and exit if either is missing.
 |----------|----------|-------------|---------|
 | `E2E_SERVER` | Yes | Server alias key from `~/.claude/coolify.json` | `vultr-stream` |
 | `E2E_BASE_DOMAIN` | Yes | Base domain for test subdomains. Must be covered by a wildcard DNS A record pointing at the VPS. | `cicd.streamlinity.com` |
-| `E2E_IMAGE` | No | Docker image to deploy. Defaults to `ghcr.io/anatesan-stream/csd-hello-world:latest`. Override to use your fork's image. | `ghcr.io/my-org/csd-hello-world:latest` |
+| `E2E_IMAGE` | No | Docker image to deploy. Defaults to `ghcr.io/streamlinity/csd-hello-world:latest`. Override to use your fork's image. | `ghcr.io/my-org/csd-hello-world:latest` |
 
 ---
 

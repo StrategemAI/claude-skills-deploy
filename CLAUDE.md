@@ -13,7 +13,7 @@ Coolify + Doppler deployment skills for Claude Code.
 ## Install
 
 ```bash
-git clone https://github.com/anatesan-stream/claude-skills-deploy.git ~/.claude/skills/setup-coolify
+git clone https://github.com/Streamlinity/claude-skills-deploy.git ~/.claude/skills/setup-coolify
 ```
 
 No build step. `/setup-coolify` is immediately available in any new Claude Code session.

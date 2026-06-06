@@ -47,8 +47,8 @@ E2E_SERVER="${E2E_SERVER:-}"
 E2E_BASE_DOMAIN="${E2E_BASE_DOMAIN:-}"
 SERVER_ALIAS=""
 # E2E_IMAGE: Docker image to deploy as the test fixture.
-#            Default: ghcr.io/anatesan-stream/csd-hello-world:latest — a public,
-#            domain-neutral image published by the repo maintainer (anatesan-stream).
+#            Default: ghcr.io/streamlinity/csd-hello-world:latest — a public,
+#            domain-neutral image published by the repo maintainer (Streamlinity).
 #            It serves HTTP 200 on /api/health and a known sentinel string
 #            ("claude-skills-deploy-e2e-ok") on /, which is what the smoke test
 #            in Step 9 looks for.
@@ -56,7 +56,7 @@ SERVER_ALIAS=""
 #            and test/push-hello-world.sh for the build+push helper. Your image
 #            must listen on port 3000, serve /api/health → 200, and be pullable
 #            by the Coolify VPS (public or pre-authenticated in the Coolify UI).
-E2E_IMAGE="${E2E_IMAGE:-ghcr.io/anatesan-stream/csd-hello-world:latest}"
+E2E_IMAGE="${E2E_IMAGE:-ghcr.io/streamlinity/csd-hello-world:latest}"
 DEPLOY_TIMEOUT=180    # seconds to wait for Coolify deploy to finish
 SMOKE_TIMEOUT=120     # seconds to wait for HTTPS smoke test (cert issuance takes ~30-60s)
 

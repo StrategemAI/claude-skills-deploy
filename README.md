@@ -37,7 +37,7 @@ Choose the pathway that matches your goal to avoid reading in circles:
 Clone the repository directly into your personal Claude skills directory:
 
 ```bash
-git clone https://github.com/anatesan-stream/claude-skills-deploy.git ~/.claude/skills/setup-coolify
+git clone https://github.com/Streamlinity/claude-skills-deploy.git ~/.claude/skills/setup-coolify
 ```
 
 Open any Claude Code session — `/setup-coolify` is immediately available. No build or install step is required.
