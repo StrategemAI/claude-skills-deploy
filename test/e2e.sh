@@ -454,7 +454,7 @@ except: pass
     fi
   fi
 
-  [ "$found" -eq 0 ] && echo "  none found — clean slate"
+  if [ "$found" -eq 0 ]; then echo "  none found — clean slate"; fi
 }
 
 # ── Prerequisites ──────────────────────────────────────────────────────────────
