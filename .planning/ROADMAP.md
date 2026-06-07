@@ -14,7 +14,7 @@ deployment on their Coolify server.
 - [x] **Phase 2: Test Framework** - Build the E2E test runner, static workflow validator, and wire them together so a passing run proves the skill is correct
 - [x] **Phase 02.1: new-user-onboarding (URGENT)** - Remove maintainer-specific defaults and stale docs that silently fail for new users (completed 2026-05-22)
 - [x] **Phase 3: Cleanup Script** - Add the separate teardown script that lets an operator delete the hello-world deployment after inspecting it
-- [ ] **Phase 4: Multi-Server Deployment** - Deploy apps to a separate VPS registered as a Coolify server; backward-compatible with existing localhost deployments
+- [x] **Phase 4: Multi-Server Deployment** - Deploy apps to a separate VPS registered as a Coolify server; backward-compatible with existing localhost deployments (completed 2026-06-07)
 
 ## Phase Details
 
@@ -95,8 +95,8 @@ deployment on their Coolify server.
 **Plans**: 4 plans
 - [x] 04-01-PLAN.md — provision.sh + validate.sh + lib-coolify-api.sh: DEPLOY_SERVER_NAME/DEPLOY_SSH_HOST/DEPLOY_VPS_IP resolution chains, deploy_server existence check, improved destination-uuid lookup (MSRV-01..06)
 - [x] 04-02-PLAN.md — init.sh + coolify.yaml.tmpl: optional deploy_server prompt with commented-out template default (MSRV-01)
-- [ ] 04-03-PLAN.md — docs/schema.md + docs/setup-guide.md + new docs/multi-server-migration.md: field references, 'Deploy to a separate VPS' how-to, migration guide (MSRV-07, MSRV-08)
-- [ ] 04-04-PLAN.md — test/validate-deploy-server.sh: MSRV-03 regression test against live Coolify (autonomous: false; depends on 04-01)
+- [x] 04-03-PLAN.md — docs/schema.md + docs/setup-guide.md + new docs/multi-server-migration.md: field references, 'Deploy to a separate VPS' how-to, migration guide (MSRV-07, MSRV-08)
+- [x] 04-04-PLAN.md — test/validate-deploy-server.sh: MSRV-03 regression test against live Coolify (autonomous: false; depends on 04-01)
 **UI hint**: no
 
 ## Progress
@@ -107,4 +107,4 @@ deployment on their Coolify server.
 | 2. Test Framework | 2/2 | Complete | 2026-05-22 |
 | 02.1. new-user-onboarding | 4/4 | Complete    | 2026-05-22 |
 | 3. Cleanup Script | 1/1 | Complete | 2026-05-22 |
-| 4. Multi-Server Deployment | 2/4 | In Progress|  |
+| 4. Multi-Server Deployment | 4/4 | Complete   | 2026-06-07 |
