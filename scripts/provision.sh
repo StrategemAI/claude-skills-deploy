@@ -104,7 +104,7 @@ echo "  deploy_ssh_host=$DEPLOY_SSH_HOST"
 # MSRV-05: DNS A records target the deploy server's public IP.
 # Resolution order:
 #   1. coolify.json servers.$SERVER_ALIAS.deploy_vps_ip (explicit for deploy server)
-#   2. GET /servers/$DEPLOY_SERVER_UUID .ip (skip if "host.docker.internal")
+#   2. GET /servers/$DEPLOY_SERVER_UUID .ip (skip if private/loopback or "host.docker.internal")
 #   3. coolify.json servers.$SERVER_ALIAS.vps_ip (only meaningful when deploy_server unset — localhost case)
 #   4. ssh $DEPLOY_SSH_HOST + ifconfig.me
 DEPLOY_VPS_IP=$(python3 -c "
@@ -115,11 +115,17 @@ print(d.get('servers',{}).get('$SERVER_ALIAS',{}).get('deploy_vps_ip',''))
 DEPLOY_VPS_IP_SOURCE="coolify.json deploy_vps_ip"
 if [ -z "$DEPLOY_VPS_IP" ]; then
   DEPLOY_VPS_IP=$(coolify_curl GET "/servers/$DEPLOY_SERVER_UUID" 2>/dev/null | python3 -c "
-import json,sys
+import json,sys,ipaddress
 try: ip=json.load(sys.stdin).get('ip','')
 except: ip=''
-# Skip 'host.docker.internal' — it's the Coolify host internal alias, not a public IP.
-if ip and ip != 'host.docker.internal': print(ip)
+# Skip 'host.docker.internal' and private IPs — they are not public DNS targets.
+if ip and ip != 'host.docker.internal':
+    try:
+        addr = ipaddress.ip_address(ip)
+        if addr.is_global:
+            print(ip)
+    except ValueError:
+        pass
 " 2>/dev/null || echo "")
   [ -n "$DEPLOY_VPS_IP" ] && DEPLOY_VPS_IP_SOURCE="Coolify API GET /servers/$DEPLOY_SERVER_UUID.ip"
 fi
