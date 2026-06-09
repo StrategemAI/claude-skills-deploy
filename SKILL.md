@@ -21,7 +21,7 @@ alias in `coolify.yaml` selects both the Coolify URL and the Doppler account.
 | `/setup-coolify` | Provision/update: ensures Doppler keys exist, upserts staging + production Coolify apps, syncs env vars, mounts Doppler-fallback volume, triggers initial deploy. Idempotent. |
 | `/setup-coolify init_cicd` | Interactive setup of `~/.claude/coolify.json` for a new server alias. Prompts for url, api_key, doppler_account, ssh_host. Validates existing credentials before prompting for replacement. |
 | `/setup-coolify init_app` | Bootstraps `coolify.yaml` and `.github/workflows/deploy.yml` in the current repo. Prompts for project name, server alias, domains, env vars, and optional deploy_server/deploy_ssh_host. Seeds dev+stg Doppler configs from `.env.local` when present. |
-| `/setup-coolify validate` | Dry-run: checks that all `env_vars` keys in coolify.yaml exist in Doppler staging AND production configs; verifies Coolify API reachability. No mutations. |
+| `/setup-coolify validate` | Validates that all `env_vars` keys in coolify.yaml exist in Doppler staging AND production configs; verifies Coolify API reachability. If `.env.local` or `.env.production` are present in the repo root, automatically fills any **missing** Doppler keys from those files before checking — `.env.local` seeds `dev` + `stg`, `.env.production` seeds `prd`. Never overwrites an existing Doppler value. |
 
 ## Secrets injection model (same-image promotion)
 
@@ -108,7 +108,18 @@ After writing files, detects `.env.local` and offers to seed `dev` and `stg` Dop
 
 ## validate flow
 
-Runs `bash $HOME/.claude/skills/setup-coolify/scripts/validate.sh`. See the script for details.
+Runs `bash $HOME/.claude/skills/setup-coolify/scripts/validate.sh`.
+
+1. Parses and schema-checks `coolify.yaml`.
+2. Verifies server alias, ssh_host, Coolify API reachability, deploy_server, SSH connectivity, DNS credentials.
+3. **Gap-fill from local .env files (automatic, targeted mutation):**
+   - If `.env.local` exists in the repo root → sets any keys missing from Doppler `stg` and `dev` configs using values from the file.
+   - If `.env.production` exists → sets any keys missing from Doppler `prd` config.
+   - Only fills missing/empty keys. Never overwrites an existing Doppler value.
+   - Logs every key filled with its target config.
+4. Checks that every `env_vars` key from `coolify.yaml` exists in Doppler staging AND production with a non-placeholder value. Reports all failures before exiting (error-accumulation pattern).
+
+The gap-fill step means a developer can run `/setup-coolify validate` immediately after cloning a repo (with `.env.local` present) and have their Doppler configs populated automatically, without a separate manual seeding step.
 
 ## See also
 

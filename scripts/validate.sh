@@ -187,6 +187,89 @@ if [ -n "$EFFECTIVE_SSH_HOST" ]; then
   fi
 fi
 
+# ── Gap-fill from .env files before key validation ────────────────────────────
+# If .env.local or .env.production exist in the working directory, use their
+# values to fill any keys that are missing from the corresponding Doppler configs.
+# .env.local  → dev + stg (mirrors the init_app seeding convention)
+# .env.production → prd
+# Only fills missing/empty keys — never overwrites an existing Doppler value.
+# This is a targeted mutation (fill gaps), not a full sync.
+
+_parse_env_file() {
+  # Emit KEY=VALUE pairs from a .env file (bash-style), one per line.
+  # Skips blank lines and comments. Strips surrounding single/double quotes from values.
+  local file="$1"
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      local k="${BASH_REMATCH[1]}"
+      local v="${BASH_REMATCH[2]}"
+      v="${v#\"}" ; v="${v%\"}"
+      v="${v#\'}" ; v="${v%\'}"
+      printf '%s\t%s\n' "$k" "$v"
+    fi
+  done < "$file"
+}
+
+_fill_missing_from_env() {
+  # Fill keys missing from a Doppler config using values from a .env file.
+  # Args: <env_file> <doppler_project> <doppler_config> [<doppler_config2> ...]
+  local env_file="$1"; shift
+  local doppler_project="$1"; shift
+  local configs=("$@")
+
+  [ -f "$env_file" ] || return 0
+
+  # Build an associative array of key→value from the env file
+  declare -A _env_vals
+  while IFS=$'\t' read -r k v; do
+    _env_vals["$k"]="$v"
+  done < <(_parse_env_file "$env_file")
+
+  [ "${#_env_vals[@]}" -eq 0 ] && return 0
+
+  local filled=0
+  for cfg in "${configs[@]}"; do
+    for k in "${!_env_vals[@]}"; do
+      # Only fill if missing or empty in Doppler
+      if ! doppler_check_key "$doppler_project" "$cfg" "$k" 2>/dev/null; then
+        local v="${_env_vals[$k]}"
+        if doppler secrets set "${k}=${v}" \
+             --project "$doppler_project" --config "$cfg" \
+             >/dev/null 2>&1; then
+          echo "  validate: gap-filled $k → $doppler_project/$cfg (from $env_file)"
+          filled=$((filled+1))
+        else
+          echo "  validate: WARNING: could not set $k in $doppler_project/$cfg" >&2
+        fi
+      fi
+    done
+  done
+
+  [ "$filled" -gt 0 ] && echo "validate: gap-fill complete ($filled key(s) set from $env_file)"
+  return 0
+}
+
+# Determine which .env files are present relative to the yaml's directory
+YAML_DIR="$(cd "$(dirname "$YAML_PATH")" && pwd)"
+ENV_LOCAL="${YAML_DIR}/.env.local"
+ENV_PROD="${YAML_DIR}/.env.production"
+
+if [ -f "$ENV_LOCAL" ] || [ -f "$ENV_PROD" ]; then
+  echo ""
+  echo "validate: .env file gap-fill — checking for missing Doppler keys"
+  [ -f "$ENV_LOCAL" ] && echo "  .env.local   → $DOPPLER_PROJECT/$STAGING_DOPPLER + dev"
+  [ -f "$ENV_PROD"  ] && echo "  .env.production → $DOPPLER_PROJECT/$PROD_DOPPLER"
+
+  if [ -f "$ENV_LOCAL" ]; then
+    _fill_missing_from_env "$ENV_LOCAL" "$DOPPLER_PROJECT" "$STAGING_DOPPLER" "dev"
+  fi
+  if [ -f "$ENV_PROD" ]; then
+    _fill_missing_from_env "$ENV_PROD" "$DOPPLER_PROJECT" "$PROD_DOPPLER"
+  fi
+  echo ""
+fi
+
 # Verify every env_vars key exists in BOTH staging and production with non-placeholder values
 for ENV in "$STAGING_DOPPLER" "$PROD_DOPPLER"; do
   for KEY in $ENV_VARS; do
@@ -199,7 +282,7 @@ for ENV in "$STAGING_DOPPLER" "$PROD_DOPPLER"; do
       if [ "$RC" = "2" ]; then
         fail "MISSING:$KEY:$ENV (present but value is TODO_REPLACE_BEFORE_DEPLOY)"
       else
-        fail "MISSING:$KEY:$ENV (key absent in Doppler)"
+        fail "MISSING:$KEY:$ENV (key absent in Doppler — add it to .env.local or .env.production and re-run, or set manually)"
       fi
     fi
   done
@@ -207,8 +290,11 @@ done
 
 if [ "$ERRORS" -gt 0 ]; then
   echo "" >&2
-  echo "Stop: $ERRORS Doppler key error(s) above. Fix in Doppler dashboard or via:" >&2
-  echo "  doppler --account $DOPPLER_ACCOUNT secrets set --project $DOPPLER_PROJECT --config <env> KEY=VALUE" >&2
+  echo "Stop: $ERRORS Doppler key error(s) above." >&2
+  echo "  Option 1: Add missing keys to .env.local (dev/stg) or .env.production (prd)" >&2
+  echo "            and re-run /setup-coolify validate — they will be auto-filled." >&2
+  echo "  Option 2: Set manually via Doppler dashboard or:" >&2
+  echo "    doppler secrets set KEY=VALUE --project $DOPPLER_PROJECT --config $STAGING_DOPPLER" >&2
   exit 1
 fi
 
