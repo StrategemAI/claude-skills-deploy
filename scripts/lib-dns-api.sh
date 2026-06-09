@@ -79,13 +79,20 @@ print(f'DNS_CREDENTIAL_KEY={cred_key}')
       DNS_API_TOKEN=$(python3 -c "
 import json, sys
 d = json.load(open('$COOLIFY_REGISTRY'))
-# credential_key may be a bare field name (looked up under the current server alias)
-# or a dotted path servers.<alias>.<field>. Look in all server entries for the key.
-for alias, srv in d.get('servers', {}).items():
+servers = d.get('servers', {})
+# 1. Prefer the current server alias (SERVER_ALIAS env var set by coolify_load_server).
+import os
+current = os.environ.get('SERVER_ALIAS', '')
+if current and current in servers:
+    val = servers[current].get('$DNS_CREDENTIAL_KEY', '')
+    if val:
+        print(val); sys.exit(0)
+# 2. Scan all server entries (backwards-compatible fallback for single-server setups).
+for alias, srv in servers.items():
     val = srv.get('$DNS_CREDENTIAL_KEY', '')
     if val:
         print(val); sys.exit(0)
-# Fallback: top-level key
+# 3. Top-level key (legacy).
 print(d.get('$DNS_CREDENTIAL_KEY', ''))
 " 2>/dev/null || echo "")
       if [ -z "$DNS_API_TOKEN" ]; then
@@ -123,11 +130,19 @@ dns_load_credentials_from_env() {
       ;;
     coolify_json)
       DNS_API_TOKEN=$(python3 -c "
-import json
+import json, sys, os
 d = json.load(open('$COOLIFY_REGISTRY'))
-for alias, srv in d.get('servers', {}).items():
+servers = d.get('servers', {})
+# 1. Prefer current server alias.
+current = os.environ.get('SERVER_ALIAS', '')
+if current and current in servers:
+    val = servers[current].get('${DNS_CREDENTIAL_KEY}', '')
+    if val: print(val); sys.exit(0)
+# 2. Scan all entries.
+for alias, srv in servers.items():
     val = srv.get('${DNS_CREDENTIAL_KEY}', '')
-    if val: print(val); import sys; sys.exit(0)
+    if val: print(val); sys.exit(0)
+# 3. Top-level.
 print(d.get('${DNS_CREDENTIAL_KEY}', ''))
 " 2>/dev/null || echo "")
       if [ -z "$DNS_API_TOKEN" ]; then
@@ -182,11 +197,16 @@ print(f'dns_cred_key={cred_key}')
       [ -f "$COOLIFY_REGISTRY" ] || return 1
       local tok
       tok=$(python3 -c "
-import json
+import json, sys, os
 d = json.load(open('$COOLIFY_REGISTRY'))
-for alias, srv in d.get('servers', {}).items():
+servers = d.get('servers', {})
+current = os.environ.get('SERVER_ALIAS', '')
+if current and current in servers:
+    val = servers[current].get('$dns_cred_key', '')
+    if val: print(val); sys.exit(0)
+for alias, srv in servers.items():
     val = srv.get('$dns_cred_key', '')
-    if val: print(val); import sys; sys.exit(0)
+    if val: print(val); sys.exit(0)
 print(d.get('$dns_cred_key', ''))
 " 2>/dev/null || echo "")
       [ -n "$tok" ]

@@ -28,6 +28,10 @@ print('yes' if d.get('servers',{}).get('$alias') else 'no')
   COOLIFY_URL=$(python3 -c "import json; print(json.load(open('$COOLIFY_REGISTRY'))['servers']['$alias']['url'])")
   COOLIFY_API_KEY=$(python3 -c "import json; print(json.load(open('$COOLIFY_REGISTRY'))['servers']['$alias']['api_key'])")
   COOLIFY_DOPPLER_ACCOUNT=$(python3 -c "import json; print(json.load(open('$COOLIFY_REGISTRY'))['servers']['$alias'].get('doppler_account',''))")
+  # Export SERVER_ALIAS so dns_load_credentials subprocesses can scope credential
+  # lookups to the correct entry in coolify.json (avoids first-match-wins across
+  # multi-server setups).
+  export SERVER_ALIAS="$1"
   export COOLIFY_URL COOLIFY_API_KEY COOLIFY_DOPPLER_ACCOUNT
 }
 
