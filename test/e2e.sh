@@ -5,13 +5,14 @@
 # production apps, triggers staging + production deploys, smoke-tests the live
 # staging URL. On success leaves everything running (DNS, apps, Doppler) so the
 # operator can inspect the live deployment; run cleanup-deployment.sh when done.
-# On failure cleans up all resources (DNS, Coolify apps, Doppler, Docker volumes).
+# On failure (without --no-cleanup/--keep) cleans up all resources (DNS, Coolify apps, Doppler, Docker volumes).
 # Before starting, sweeps for stale csd-hello-test-* resources from prior runs and
 # removes them so each test starts from a clean slate.
 #
 # Usage:
 #   bash test/e2e.sh --server hetzner-strategem       # test against a specific server
-#   bash test/e2e.sh --keep                           # skip cleanup (debug failures)
+#   bash test/e2e.sh --no-cleanup                     # leave all resources running after test (canonical)
+#   bash test/e2e.sh --keep                           # alias for --no-cleanup; kept for backward compatibility
 #   E2E_SERVER=my-server bash test/e2e.sh             # REQUIRED — alias from ~/.claude/coolify.json
 #   E2E_BASE_DOMAIN=ci.example.com bash test/e2e.sh   # REQUIRED — base domain for test URLs
 #   E2E_IMAGE=ghcr.io/my-org/my-hello:latest bash test/e2e.sh
@@ -67,8 +68,9 @@ SMOKE_TIMEOUT=120     # seconds to wait for HTTPS smoke test (cert issuance take
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --server) SERVER_ALIAS="$2"; shift 2 ;;
+    --no-cleanup) KEEP_ON_EXIT=true; shift ;;
     --keep)   KEEP_ON_EXIT=true; shift ;;
-    *) echo "Unknown argument: $1" >&2; echo "Usage: bash test/e2e.sh [--server ALIAS] [--keep]" >&2; exit 1 ;;
+    *) echo "Unknown argument: $1" >&2; echo "Usage: bash test/e2e.sh [--server ALIAS] [--no-cleanup] [--keep]" >&2; exit 1 ;;
   esac
 done
 
@@ -307,7 +309,7 @@ cleanup() {
   # --keep on failure — leave everything running for debugging; print manual cleanup hints.
   if $KEEP_ON_EXIT; then
     echo ""
-    echo "─── --keep: leaving all resources running for inspection ───"
+    echo "─── --no-cleanup/--keep: leaving all resources running for inspection ───"
     echo "  Staging URL:        https://${STAGING_DOMAIN:-<not_provisioned>}"
     echo "  Production URL:     https://${PROD_DOMAIN:-<not_provisioned>}"
     echo "  Coolify project:    $TEST_PROJECT (uuid: ${COOLIFY_PROJECT_UUID:-not_created})"

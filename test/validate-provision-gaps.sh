@@ -157,6 +157,115 @@ for entry in "${OCTET_BOUNDARIES[@]}"; do
 done
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Part 1d: Schema field presence — validate.sh Python eval pattern
+#
+# validate.sh lines ~36–52 run a Python eval that extracts 7 required fields
+# from coolify.yaml and rejects empties. Tests here verify the same eval logic
+# in isolation, covering both the success path (all fields present) and the
+# error path (empty string field detected as missing).
+# ══════════════════════════════════════════════════════════════════════════════
+
+step "Part 1d: schema field presence (validate.sh Python eval pattern)"
+
+cat > "$TMP/schema-ok.yaml" <<'YAML'
+project: test-project
+server: test-server
+doppler_project: test-dp
+registry:
+  image: ghcr.io/test/test-image
+environments:
+  staging:
+    domain: staging.example.com
+    doppler_environment: stg
+  production:
+    domain: example.com
+    doppler_environment: prd
+env_vars:
+  - MY_KEY
+YAML
+
+eval "$(python3 -c "
+import yaml,sys
+d=yaml.safe_load(open('$TMP/schema-ok.yaml'))
+print(f\"T_PROJECT='{d.get('project','')}'\")
+print(f\"T_SERVER='{d.get('server','')}'\")
+print(f\"T_DOPPLER='{d.get('doppler_project','')}'\")
+print(f\"T_IMAGE='{d.get('registry',{}).get('image','')}'\")
+print(f\"T_STAGING_DOMAIN='{d.get('environments',{}).get('staging',{}).get('domain','')}'\")
+print(f\"T_PROD_DOMAIN='{d.get('environments',{}).get('production',{}).get('domain','')}'\")
+print(f\"T_ENV_VARS='{' '.join(d.get('env_vars',[]))}'\")
+")"
+T_PROJECT="${T_PROJECT:-}"
+T_SERVER="${T_SERVER:-}"
+T_DOPPLER="${T_DOPPLER:-}"
+T_IMAGE="${T_IMAGE:-}"
+T_STAGING_DOMAIN="${T_STAGING_DOMAIN:-}"
+T_PROD_DOMAIN="${T_PROD_DOMAIN:-}"
+T_ENV_VARS="${T_ENV_VARS:-}"
+[ -n "$T_PROJECT" ]        && pass "schema: project extracted"           || fail "schema: project empty"
+[ -n "$T_SERVER" ]         && pass "schema: server extracted"            || fail "schema: server empty"
+[ -n "$T_DOPPLER" ]        && pass "schema: doppler_project extracted"   || fail "schema: doppler_project empty"
+[ -n "$T_IMAGE" ]          && pass "schema: registry.image extracted"    || fail "schema: registry.image empty"
+[ -n "$T_STAGING_DOMAIN" ] && pass "schema: staging.domain extracted"    || fail "schema: staging.domain empty"
+[ -n "$T_PROD_DOMAIN" ]    && pass "schema: production.domain extracted" || fail "schema: production.domain empty"
+[ -n "$T_ENV_VARS" ]       && pass "schema: env_vars extracted"          || fail "schema: env_vars empty"
+
+# Fixture with empty project field
+cat > "$TMP/schema-missing-project.yaml" <<'YAML'
+project: ""
+server: test-server
+doppler_project: test-dp
+registry:
+  image: ghcr.io/test/test-image
+environments:
+  staging:
+    domain: staging.example.com
+    doppler_environment: stg
+  production:
+    domain: example.com
+    doppler_environment: prd
+env_vars:
+  - MY_KEY
+YAML
+eval "$(python3 -c "
+import yaml
+d=yaml.safe_load(open('$TMP/schema-missing-project.yaml'))
+print(f\"T2_PROJECT='{d.get('project','')}'\")
+")"
+T2_PROJECT="${T2_PROJECT:-}"
+[ -z "$T2_PROJECT" ] && pass "schema: empty project field detected as missing" || fail "schema: empty project field not detected"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Part 1e: DNS zone-suffix logic — validate.sh bash check
+#
+# validate.sh lines ~190–204 use a pure-bash [[ ]] check to verify that staging
+# and production domains are suffixed by (or equal to) the dns.zone_name.
+# Tests here exercise the same logic in isolation, covering success (domain IS
+# under zone) and error (domain NOT under zone) paths.
+# ══════════════════════════════════════════════════════════════════════════════
+
+step "Part 1e: DNS zone-suffix logic (validate.sh bash check)"
+
+# Replicates the bash condition from validate.sh lines ~190–204:
+#   if [[ "$domain" != *".$zone" ]] && [[ "$domain" != "$zone" ]]; then fail; fi
+# Returns 0 (success) when the domain IS within the zone, 1 otherwise.
+check_zone_suffix() {
+  local domain="$1" zone="$2"
+  [[ "$domain" != *".$zone" ]] && [[ "$domain" != "$zone" ]] && return 1
+  return 0
+}
+
+# ── Success path: domain IS under zone ───────────────────────────────────────
+check_zone_suffix "app.example.com"         "example.com" && pass "zone-suffix: app.example.com under example.com"          || fail "zone-suffix: false negative for app.example.com"
+check_zone_suffix "example.com"             "example.com" && pass "zone-suffix: exact match accepted"                       || fail "zone-suffix: exact match rejected"
+check_zone_suffix "staging.app.example.com" "example.com" && pass "zone-suffix: multi-level subdomain under zone"           || fail "zone-suffix: multi-level rejected"
+
+# ── Error path: domain NOT under zone ────────────────────────────────────────
+check_zone_suffix "app.other.com"  "example.com" && fail "zone-suffix: app.other.com should not match example.com"  || pass "zone-suffix: app.other.com correctly rejected"
+check_zone_suffix "notexample.com" "example.com" && fail "zone-suffix: notexample.com should not match example.com" || pass "zone-suffix: notexample.com correctly rejected"
+check_zone_suffix "com"            "example.com" && fail "zone-suffix: bare TLD should not match"                   || pass "zone-suffix: bare TLD correctly rejected"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PART 2: SSH probe mechanics — P12 logic
 #
 # validate.sh P12 check calls:
@@ -208,6 +317,154 @@ if ssh -q -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=no \
 else
   skip "SSH probe to localhost failed — sshd not running on this machine (test skipped)"
 fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Part 2d: Mock Doppler key checks — lib-doppler-api.sh
+#
+# validate.sh lines ~149–167 call doppler_check_key in a loop with 3 return
+# codes: 0 present, 1 absent, 2 placeholder. Tests here exercise all three
+# paths using a stub doppler binary in $TMP/bin/, verified via subshells that
+# capture the return code with || RC=$?.
+# ══════════════════════════════════════════════════════════════════════════════
+
+step "Part 2d: Doppler key checks — mock stub (lib-doppler-api.sh)"
+
+mkdir -p "$TMP/bin"
+cat > "$TMP/bin/doppler" <<'STUB'
+#!/usr/bin/env bash
+# Stub doppler for validate-provision-gaps.sh tests.
+# Dispatches on the key name (last positional arg before --plain).
+for a in "$@"; do
+  case "$a" in
+    DPTEST_KEY_PRESENT)    echo "real-value"; exit 0;;
+    DPTEST_KEY_PLACEHOLDER) echo "TODO_REPLACE_BEFORE_DEPLOY"; exit 0;;
+    DPTEST_KEY_ABSENT)     exit 1;;
+  esac
+done
+exit 1
+STUB
+chmod +x "$TMP/bin/doppler"
+
+# Present key (RC=0)
+RC_DP_PRESENT=0
+( export PATH="$TMP/bin:$PATH"
+  source "$REPO_ROOT/scripts/lib-doppler-api.sh"
+  doppler_check_key "test-proj" "stg" "DPTEST_KEY_PRESENT" ) || RC_DP_PRESENT=$?
+[ "$RC_DP_PRESENT" -eq 0 ] && pass "doppler: present key returns 0" || fail "doppler: present key returned $RC_DP_PRESENT (expected 0)"
+
+# Absent key (RC=1)
+RC_DP_ABSENT=0
+( export PATH="$TMP/bin:$PATH"
+  source "$REPO_ROOT/scripts/lib-doppler-api.sh"
+  doppler_check_key "test-proj" "stg" "DPTEST_KEY_ABSENT" ) || RC_DP_ABSENT=$?
+[ "$RC_DP_ABSENT" -eq 1 ] && pass "doppler: absent key returns 1" || fail "doppler: absent key returned $RC_DP_ABSENT (expected 1)"
+
+# Placeholder key (RC=2) — return 2 triggers set -e in the subshell; parent captures via || RC=$?
+RC_DP_PLACEHOLDER=0
+( export PATH="$TMP/bin:$PATH"
+  source "$REPO_ROOT/scripts/lib-doppler-api.sh"
+  doppler_check_key "test-proj" "stg" "DPTEST_KEY_PLACEHOLDER" ) || RC_DP_PLACEHOLDER=$?
+[ "$RC_DP_PLACEHOLDER" -eq 2 ] && pass "doppler: placeholder key returns 2" || fail "doppler: placeholder key returned $RC_DP_PLACEHOLDER (expected 2)"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Part 2e: Coolify API error format — unreachable URL
+#
+# validate.sh lines ~79–83 call coolify_curl and emit 'INVALID:coolify:api
+# unreachable'. Tests here verify: (1) coolify_curl itself returns non-zero
+# for a connection-refused URL; (2) the exact error string is present in
+# validate.sh source.
+# ══════════════════════════════════════════════════════════════════════════════
+
+step "Part 2e: Coolify API error format — unreachable URL"
+
+# Runtime check: coolify_curl fails non-zero for 127.0.0.1:1 (port always closed)
+RC_CURL=0
+( COOLIFY_URL="http://127.0.0.1:1"
+  COOLIFY_API_KEY="fake-api-key"
+  export COOLIFY_URL COOLIFY_API_KEY
+  source "$REPO_ROOT/scripts/lib-coolify-api.sh"
+  coolify_curl GET "/projects" ) || RC_CURL=$?
+[ "$RC_CURL" -ne 0 ] && pass "Coolify API: coolify_curl fails non-zero for unreachable URL" || fail "Coolify API: coolify_curl succeeded to 127.0.0.1:1 (unexpected)"
+
+# Static check: validate.sh must contain the expected error message format
+grep -q "INVALID:coolify:api unreachable" "$VALIDATE_SH" && pass "Coolify API: FAIL message format 'INVALID:coolify:api unreachable' present in validate.sh" || fail "Coolify API: 'INVALID:coolify:api unreachable' not found in validate.sh"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Part 2f: DNS coolify_json credential lookup — lib-dns-api.sh
+#
+# validate.sh lines ~169–210 call dns_check_credentials which dispatches on
+# credential_source. Tests here exercise the coolify_json branch: key present
+# returns 0, key absent returns non-zero.
+# ══════════════════════════════════════════════════════════════════════════════
+
+step "Part 2f: DNS coolify_json credential lookup (lib-dns-api.sh)"
+
+TEMP_COOLIFY_JSON="$TMP/coolify-dns-test.json"
+python3 -c "
+import json
+data = {'servers': {'test-server': {'CF_API_TOKEN': 'fake-cf-token-123'}}}
+print(json.dumps(data))
+" > "$TEMP_COOLIFY_JSON"
+
+DNS_FIXTURE_OK="$TMP/dns-coolify-json-ok.yaml"
+cat > "$DNS_FIXTURE_OK" <<'YAML'
+project: test-dns-project
+server: test-server
+doppler_project: test-dp
+registry:
+  image: ghcr.io/test/test
+environments:
+  staging:
+    domain: staging.example.com
+    doppler_environment: stg
+  production:
+    domain: example.com
+    doppler_environment: prd
+env_vars:
+  - MY_KEY
+dns:
+  provider: cloudflare
+  zone_name: example.com
+  credential_source: coolify_json
+  credential_key: CF_API_TOKEN
+YAML
+
+# Success path: key present in coolify.json → returns 0
+RC_DNS_OK=0
+( export COOLIFY_REGISTRY="$TEMP_COOLIFY_JSON"
+  source "$REPO_ROOT/scripts/lib-dns-api.sh"
+  dns_check_credentials "$DNS_FIXTURE_OK" ) || RC_DNS_OK=$?
+[ "$RC_DNS_OK" -eq 0 ] && pass "DNS coolify_json: credential found returns 0" || fail "DNS coolify_json: credential found returned $RC_DNS_OK (expected 0)"
+
+DNS_FIXTURE_MISSING="$TMP/dns-coolify-json-missing.yaml"
+cat > "$DNS_FIXTURE_MISSING" <<'YAML'
+project: test-dns-project
+server: test-server
+doppler_project: test-dp
+registry:
+  image: ghcr.io/test/test
+environments:
+  staging:
+    domain: staging.example.com
+    doppler_environment: stg
+  production:
+    domain: example.com
+    doppler_environment: prd
+env_vars:
+  - MY_KEY
+dns:
+  provider: cloudflare
+  zone_name: example.com
+  credential_source: coolify_json
+  credential_key: MISSING_DNS_TOKEN
+YAML
+
+# Error path: key absent in coolify.json → returns non-zero
+RC_DNS_MISSING=0
+( export COOLIFY_REGISTRY="$TEMP_COOLIFY_JSON"
+  source "$REPO_ROOT/scripts/lib-dns-api.sh"
+  dns_check_credentials "$DNS_FIXTURE_MISSING" ) || RC_DNS_MISSING=$?
+[ "$RC_DNS_MISSING" -ne 0 ] && pass "DNS coolify_json: missing credential returns non-zero" || fail "DNS coolify_json: missing credential returned 0 (expected non-zero)"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 3: validate.sh integration — requires --server <alias>
