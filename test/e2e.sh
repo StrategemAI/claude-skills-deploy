@@ -214,6 +214,8 @@ write_report() {
     "${DNS_ZONE_NAME_E2E:-}" \
     "${DNS_CREDENTIAL_SOURCE_E2E:-}" \
     "${DNS_CREDENTIAL_KEY_E2E:-}" \
+    "${COOLIFY_URL:-}" \
+    "${DOPPLER_ACCOUNT:-}" \
     "${DNS_RECORDS[@]+"${DNS_RECORDS[@]}"}" \
     "---results---" \
     "${RESULTS[@]+"${RESULTS[@]}"}" \
@@ -237,7 +239,9 @@ dns_zone_id        = args[10]
 dns_zone_name      = args[11]
 dns_cred_source    = args[12]
 dns_cred_key       = args[13]
-rest               = args[14:]
+coolify_url        = args[14]
+doppler_account    = args[15]
+rest               = args[16:]
 
 # Split at sentinel to separate dns_records from result_lines
 sentinel = "---results---"
@@ -269,6 +273,8 @@ for entry in dns_record_args:
 report = {
     "run_timestamp": run_timestamp,
     "server_alias": server_alias,
+    "coolify_url": coolify_url,
+    "doppler_account": doppler_account,
     "ssh_host": ssh_host,
     "staging_url": staging_url,
     "coolify_project_uuid": coolify_project_uuid,
@@ -577,10 +583,23 @@ e = d.get('servers', {}).get('$SERVER_ALIAS', {})
 print(e.get('server_name', 'localhost'))
 " 2>/dev/null || echo "localhost")
 
+# Read dns_default zone for the pre-run banner (so operator knows before any step
+# which Cloudflare zone/provider will be used for DNS records)
+_BANNER_DNS=$(python3 -c "
+import json, sys
+d = json.load(open('$HOME/.claude/coolify.json'))
+dns = d.get('servers', {}).get('$SERVER_ALIAS', {}).get('dns_default', {})
+if not dns or dns.get('provider', 'none') == 'none':
+    print('none')
+else:
+    print(dns.get('provider', 'none') + ' / zone: ' + dns.get('zone_name', ''))
+" 2>/dev/null || echo "none")
+
 echo "  Coolify server   : $SERVER_ALIAS → $COOLIFY_URL"
 echo "  Deploy server    : ${_SUMMARY_DEPLOY_SERVER}"
 echo "  Doppler account  : $DOPPLER_ACCOUNT"
 echo "  SSH host         : $SSH_HOST"
+echo "  DNS              : ${_BANNER_DNS}"
 echo "  Base domain      : $E2E_BASE_DOMAIN"
 echo "  Test project     : $TEST_PROJECT"
 echo "  Staging app      : ${TEST_PROJECT}-staging"

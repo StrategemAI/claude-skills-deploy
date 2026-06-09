@@ -95,20 +95,40 @@ eval "$_fields"
 coolify_load_server "$SERVER_ALIAS"
 doppler_load_account "$SERVER_ALIAS"
 
-echo "═══════════════════════════════════"
+echo "═══════════════════════════════════════════════════════════════════════════════"
 echo " Cleanup: $DOPPLER_PROJECT"
-echo "═══════════════════════════════════"
-echo "  Report file:     $REPORT_FILE"
-echo "  Server alias:    $SERVER_ALIAS → $COOLIFY_URL"
-echo "  SSH host:        $SSH_HOST"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo ""
+echo "  Report file      : $REPORT_FILE"
+echo ""
+echo "  Target"
+echo "  ────────────────────────────────────────────────────────────────────────────"
+echo "  Coolify server   : $SERVER_ALIAS → $COOLIFY_URL"
+echo "  Doppler account  : $DOPPLER_ACCOUNT"
+echo "  SSH host         : $SSH_HOST"
+if [ -n "${DNS_PROVIDER_REPORT:-}" ] && [ "${DNS_PROVIDER_REPORT}" != "none" ]; then
+  echo "  DNS provider     : ${DNS_PROVIDER_REPORT}  (zone: ${DNS_ZONE_NAME_REPORT:-unknown})"
+fi
+echo ""
+echo "  Resources to delete"
+echo "  ────────────────────────────────────────────────────────────────────────────"
+echo "  Coolify project  : $DOPPLER_PROJECT  (uuid: $COOLIFY_PROJECT_UUID)"
+echo "  Staging app      : $DOPPLER_PROJECT-staging  (uuid: $STAGING_APP_UUID)"
+echo "  Production app   : $DOPPLER_PROJECT-production  (uuid: $PRODUCTION_APP_UUID)"
+echo "  Doppler project  : $DOPPLER_PROJECT"
+echo "═══════════════════════════════════════════════════════════════════════════════"
 echo ""
 
 # ── Deletion sequence ──────────────────────────────────────────────────────────
 
 echo "=== Deleting DNS records ==="
-if [ -z "${DNS_PROVIDER_REPORT:-}" ] || [ -z "${DNS_RECORDS_TSV:-}" ]; then
+if [ -z "${DNS_PROVIDER_REPORT:-}" ] || [ "${DNS_PROVIDER_REPORT}" = "none" ] || [ -z "${DNS_RECORDS_TSV:-}" ]; then
   echo "  (no DNS records in report — skipped)"
 else
+  echo "  provider : ${DNS_PROVIDER_REPORT}"
+  echo "  zone     : ${DNS_ZONE_NAME_REPORT}  (id: ${DNS_ZONE_ID_REPORT:-unknown})"
+  echo "  creds    : ${DNS_CREDENTIAL_KEY_REPORT} (source: ${DNS_CREDENTIAL_SOURCE_REPORT:-doppler})"
+  echo ""
   # Load DNS credentials from report metadata + coolify.json/Doppler
   export DNS_PROVIDER="${DNS_PROVIDER_REPORT}"
   export DNS_ZONE_NAME="${DNS_ZONE_NAME_REPORT}"
@@ -171,14 +191,14 @@ doppler projects delete "$DOPPLER_PROJECT" --yes >/dev/null 2>&1 \
 # ── Confirmation block (CLEAN-02) ──────────────────────────────────────────────
 
 echo ""
-echo "═══════════════════════════════════"
+echo "═══════════════════════════════════════════════════════════════════════════════"
 echo " Cleanup complete"
-echo "═══════════════════════════════════"
-echo "  Coolify project:     $DOPPLER_PROJECT ($COOLIFY_PROJECT_UUID)"
-echo "  Staging app UUID:    $STAGING_APP_UUID"
-echo "  Production app UUID: $PRODUCTION_APP_UUID"
-echo "  Doppler project:     $DOPPLER_PROJECT"
-echo "  Server:              $SERVER_ALIAS → $COOLIFY_URL"
-echo "═══════════════════════════════════"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo "  Coolify project  : $DOPPLER_PROJECT ($COOLIFY_PROJECT_UUID)"
+echo "  Staging app UUID : $STAGING_APP_UUID"
+echo "  Production UUID  : $PRODUCTION_APP_UUID"
+echo "  Doppler project  : $DOPPLER_PROJECT"
+echo "  Server           : $SERVER_ALIAS → $COOLIFY_URL"
+echo "═══════════════════════════════════════════════════════════════════════════════"
 
 exit 0
