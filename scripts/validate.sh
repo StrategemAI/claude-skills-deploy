@@ -86,7 +86,7 @@ echo "validate: server alias '$SERVER' -> $COOLIFY_URL (doppler account: $DOPPLE
 WARNINGS=0
 warn() { echo "WARN: $*" >&2; WARNINGS=$((WARNINGS+1)); }
 
-_server_field=$(python3 - "$HOME/.claude/coolify.json" "$SERVER" <<'PY'
+_server_field=$(python3 - "$HOME/.claude/coolify.json" "$SERVER" 2>/dev/null <<'PY' || echo ""
 import json, sys
 d = json.load(open(sys.argv[1]))
 s = d.get('servers', {}).get(sys.argv[2], {})
@@ -99,7 +99,7 @@ if not s.get('dns_default'):
     missing.append('dns_default')
 print(' '.join(missing))
 PY
-2>/dev/null || echo "")
+)
 
 if [ -n "$_server_field" ]; then
   for _f in $_server_field; do
@@ -379,6 +379,7 @@ else
   if ! dns_check_credentials "$YAML_PATH"; then
     fail "MISSING:DNS_CREDENTIAL:${cred_key:-<credential_key>} (not found in ${cred_source:-doppler})"
   else
+    # shellcheck disable=SC2154  # provider/zone_name/cred_key assigned via eval of emit-dns-vars
     echo "validate: dns: provider=$provider zone=$zone_name credential=$cred_key (source: ${cred_source:-doppler}) — OK"
   fi
 fi

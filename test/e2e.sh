@@ -815,10 +815,9 @@ print(f\"_dns_provider_val={provider}\"  )
 ")"
 
 if [ "${_dns_enabled:-false}" = "true" ]; then
-  DNS_PROVIDER="$_dns_provider_val"
-  DNS_ZONE_NAME_E2E="$_dns_zone_name"
-  DNS_CREDENTIAL_SOURCE_E2E="$_dns_cred_source"
-  DNS_CREDENTIAL_KEY_E2E="$_dns_cred_key"
+  # shellcheck disable=SC2154  # _dns_* vars assigned via eval of the python block above
+  DNS_PROVIDER="$_dns_provider_val" DNS_ZONE_NAME_E2E="$_dns_zone_name" \
+    DNS_CREDENTIAL_SOURCE_E2E="$_dns_cred_source" DNS_CREDENTIAL_KEY_E2E="$_dns_cred_key"
   export DNS_PROVIDER DNS_ZONE_NAME="$DNS_ZONE_NAME_E2E"
   export DOPPLER_PROJECT="$TEST_PROJECT" DOPPLER_ENV="stg"
   dns_load_credentials "$YAML_PATH"

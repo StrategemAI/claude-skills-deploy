@@ -182,6 +182,7 @@ eval "$(python3 "$SCRIPT_DIR/lib-config.py" emit-dns-vars "$YAML_PATH")"
 
 if [ "${dns_provider:-none}" != "none" ]; then
   DNS_ENABLED=true
+  # shellcheck disable=SC2154  # dns_provider/dns_zone_name_raw assigned via eval of emit-dns-vars
   export DNS_PROVIDER="$dns_provider" DNS_ZONE_NAME="$dns_zone_name_raw"
   export DOPPLER_PROJECT DOPPLER_ENV="$STAGING_DOPPLER"
   dns_load_credentials "$YAML_PATH"

@@ -37,7 +37,7 @@ rm -rf "$T1_DIR"
 # ─── Test 2: Piped input produces valid coolify.yaml ───
 T2_DIR=$(mktemp -d)
 (
-  cd "$T2_DIR"
+  cd "$T2_DIR" || exit 1
   printf 'testproj\nvultr-stream\n\n\nghcr.io/org/test\ntest-staging.example.com\ntest.example.com\nnone\n\n\nDATABASE_URL OPENAI_API_KEY\n' \
     | bash "$INIT_SH" > /dev/null 2>&1
 )
@@ -51,7 +51,7 @@ rm -rf "$T2_DIR"
 # ─── Test 3: No unsubstituted {{ tokens remain ───
 T3_DIR=$(mktemp -d)
 (
-  cd "$T3_DIR"
+  cd "$T3_DIR" || exit 1
   printf 'testproj\nvultr-stream\n\n\nghcr.io/org/test\ntest-staging.example.com\ntest.example.com\nnone\n\n\nDATABASE_URL\n' \
     | bash "$INIT_SH" > /dev/null 2>&1
 )
@@ -65,7 +65,7 @@ rm -rf "$T3_DIR"
 # ─── Test 4: build.context defaults to '.' and build.dockerfile defaults to './Dockerfile' ───
 T4_DIR=$(mktemp -d)
 (
-  cd "$T4_DIR"
+  cd "$T4_DIR" || exit 1
   # Accept defaults for build.context and build.dockerfile (press Enter twice)
   printf 'testproj\nvultr-stream\n\n\nghcr.io/org/test\ntest-staging.example.com\ntest.example.com\nnone\n\n\nDATABASE_URL\n' \
     | bash "$INIT_SH" > /dev/null 2>&1
@@ -86,7 +86,7 @@ rm -rf "$T4_DIR"
 # ─── Test 5: env_vars produces proper YAML list ───
 T5_DIR=$(mktemp -d)
 (
-  cd "$T5_DIR"
+  cd "$T5_DIR" || exit 1
   printf 'testproj\nvultr-stream\n\n\nghcr.io/org/test\ntest-staging.example.com\ntest.example.com\nnone\n\n\nDATABASE_URL ANTHROPIC_API_KEY\n' \
     | bash "$INIT_SH" > /dev/null 2>&1
 )
@@ -107,7 +107,7 @@ rm -rf "$T5_DIR"
 # ─── Test 6: init.sh also produces .github/workflows/deploy.yml ───
 T6_DIR=$(mktemp -d)
 (
-  cd "$T6_DIR"
+  cd "$T6_DIR" || exit 1
   printf 'testproj\nvultr-stream\n\n\nghcr.io/org/test\ntest-staging.example.com\ntest.example.com\nnone\n\n\nDATABASE_URL\n' \
     | bash "$INIT_SH" > /dev/null 2>&1
 )
@@ -123,7 +123,7 @@ T7_DIR=$(mktemp -d)
 mkdir -p "$T7_DIR/.github/workflows"
 touch "$T7_DIR/.github/workflows/deploy.yml"
 (
-  cd "$T7_DIR"
+  cd "$T7_DIR" || exit 1
   bash "$INIT_SH" > /dev/null 2>&1
 ) && run_test "Test 7: deploy.yml idempotency guard exits non-zero" "1" || run_test "Test 7: deploy.yml idempotency guard exits non-zero" "0"
 rm -rf "$T7_DIR"

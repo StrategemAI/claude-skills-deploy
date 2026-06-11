@@ -179,6 +179,7 @@ dns_check_credentials() {
   local yaml_path="$1"
   if [ ! -f "$yaml_path" ]; then return 1; fi
 
+  # shellcheck disable=SC2034  # all four assigned via eval below; declared local to avoid global leak
   local dns_provider dns_zone_name dns_cred_source dns_cred_key
   eval "$(python3 -c "
 import yaml, sys
