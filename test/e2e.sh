@@ -893,12 +893,20 @@ pass "deploy finished (took $(($(date +%s) - START_TS))s)"
 
 step "Step 8: Verify app status via Coolify API"
 
-APP_STATUS=$(coolify_curl GET "/applications/$STG_APP_UUID" 2>/dev/null \
-  | python3 -c "
+# Coolify's status field lags the actual container state for a few seconds after
+# a deploy finishes (container restart window) — poll briefly instead of one-shot.
+APP_STATUS="unknown"
+for _attempt in 1 2 3 4 5 6; do
+  APP_STATUS=$(coolify_curl GET "/applications/$STG_APP_UUID" 2>/dev/null \
+    | python3 -c "
 import json,sys
 try: print(json.load(sys.stdin).get('status','unknown'))
 except: print('unknown')
 " 2>/dev/null || echo "unknown")
+  [[ "$APP_STATUS" == running* ]] && break
+  echo "  [attempt $_attempt/6] staging app status: $APP_STATUS — retrying in 5s"
+  sleep 5
+done
 
 echo "  staging app status: $APP_STATUS"
 if [[ "$APP_STATUS" == running* ]]; then
@@ -993,12 +1001,19 @@ done
 
 pass "production deploy finished (took $(($(date +%s) - START_TS))s)"
 
-PRD_STATUS=$(coolify_curl GET "/applications/$PRD_APP_UUID" 2>/dev/null \
-  | python3 -c "
+# Same status-lag tolerance as the staging check (Step 8).
+PRD_STATUS="unknown"
+for _attempt in 1 2 3 4 5 6; do
+  PRD_STATUS=$(coolify_curl GET "/applications/$PRD_APP_UUID" 2>/dev/null \
+    | python3 -c "
 import json,sys
 try: print(json.load(sys.stdin).get('status','unknown'))
 except: print('unknown')
 " 2>/dev/null || echo "unknown")
+  [[ "$PRD_STATUS" == running* ]] && break
+  echo "  [attempt $_attempt/6] production app status: $PRD_STATUS — retrying in 5s"
+  sleep 5
+done
 
 echo "  production app status: $PRD_STATUS"
 if [[ "$PRD_STATUS" == running* ]]; then

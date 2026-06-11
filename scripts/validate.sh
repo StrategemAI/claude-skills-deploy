@@ -42,9 +42,16 @@ fail() { echo "FAIL: $*" >&2; ERRORS=$((ERRORS+1)); }
 [ -n "$SERVER" ] || fail "INVALID:coolify.yaml:server (empty)"
 [ -n "$DOPPLER_PROJECT" ] || fail "INVALID:coolify.yaml:doppler_project (empty)"
 [ -n "$REGISTRY_IMAGE" ] || fail "INVALID:coolify.yaml:registry.image (empty)"
-[ -n "$STAGING_DOMAIN" ] || fail "INVALID:coolify.yaml:environments.staging.domain"
-[ -n "$PROD_DOMAIN" ] || fail "INVALID:coolify.yaml:environments.production.domain"
 [ -n "$ENV_VARS" ] || fail "INVALID:coolify.yaml:env_vars (empty list)"
+
+# Validate the environments: map — staging+production required, every env needs
+# domain + doppler_environment. list-environments prints named-field errors itself.
+if ! ENV_LINES_RAW=$(python3 "$SCRIPT_DIR/lib-config.py" list-environments "$YAML_PATH" 2>&1); then
+  while IFS= read -r _eline; do
+    fail "INVALID:coolify.yaml:${_eline#ERROR: }"
+  done <<< "$ENV_LINES_RAW"
+fi
+mapfile -t ENV_LINES <<< "$ENV_LINES_RAW"
 
 if [ "$ERRORS" -gt 0 ]; then
   echo "" >&2
@@ -308,8 +315,14 @@ else
   fi
 fi
 
-# Verify every env_vars key exists in BOTH staging and production with non-placeholder values
-for ENV in "$STAGING_DOPPLER" "$PROD_DOPPLER"; do
+# Verify every env_vars key exists in EVERY environment's Doppler config with
+# non-placeholder values (staging + production + any extra envs like qa/preview)
+_DOPPLER_CONFIGS=()
+for _env_line in "${ENV_LINES[@]}"; do
+  IFS=$'\t' read -r _ _ _dopp <<< "$_env_line"
+  [ -n "$_dopp" ] && _DOPPLER_CONFIGS+=("$_dopp")
+done
+for ENV in "${_DOPPLER_CONFIGS[@]}"; do
   for KEY in $ENV_VARS; do
     # Strip trailing comment-encoded build_time annotation if any survived (defensive)
     KEY="${KEY%%#*}"
@@ -376,7 +389,7 @@ if [ "$ERRORS" -gt 0 ]; then
   exit 1
 fi
 
-echo "OK: All keys present in $DOPPLER_PROJECT/$STAGING_DOPPLER and $DOPPLER_PROJECT/$PROD_DOPPLER"
+echo "OK: All keys present in $DOPPLER_PROJECT/{$(IFS=,; echo "${_DOPPLER_CONFIGS[*]}")}"
 echo "OK: $COOLIFY_URL API reachable"
 echo "OK: ready to provision (run /setup-coolify without arguments)"
 exit 0
