@@ -171,16 +171,18 @@ for ENV_NAME in staging production; do
   APP_UUID=$(coolify_find_app_by_name "$APP_NAME")
   if [ -z "$APP_UUID" ]; then
     BODY=$(python3 - "$PROJECT_UUID" "$DEPLOY_SERVER_UUID" "$APP_NAME" \
-        "$REGISTRY_IMAGE_NAME" "$APP_PORT" "https://$DOMAIN" "${DEST_UUID:-}" <<'PY'
+        "$REGISTRY_IMAGE_NAME" "$REGISTRY_IMAGE_TAG" "$APP_PORT" "https://$DOMAIN" "${DEST_UUID:-}" <<'PY'
 import json, sys
-project_uuid, server_uuid, name, img, port, domain, dest_uuid = sys.argv[1:8]
+project_uuid, server_uuid, name, img, tag, port, domain, dest_uuid = sys.argv[1:9]
 d = {
   'project_uuid': project_uuid,
   'server_uuid': server_uuid,
   'environment_name': 'production',
   'name': name,
   'docker_registry_image_name': img,
-  'docker_registry_image_tag': 'latest',
+  # Initial tag — CI will PATCH this to the SHA tag before the first deploy.
+  # 'latest' is used as a safe placeholder; provision does NOT trigger a deploy.
+  'docker_registry_image_tag': tag or 'latest',
   'ports_exposes': port,
   'domains': domain,
   'is_auto_deploy_enabled': False,
@@ -191,9 +193,7 @@ if dest_uuid:
 print(json.dumps(d))
 PY
 )
-    # Try registry-image endpoint first; fall back to dockerimage
-    CREATE_RESP=$(coolify_curl POST "/applications/dockerimage" "$BODY" 2>/dev/null \
-      || coolify_curl POST "/applications/private-github-app" "$BODY")
+    CREATE_RESP=$(coolify_curl POST "/applications/dockerimage" "$BODY")
     APP_UUID=$(echo "$CREATE_RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('uuid',''))")
     [ -n "$APP_UUID" ] || { echo "ERROR: failed to create app $APP_NAME. Response: $CREATE_RESP" >&2; exit 1; }
     
@@ -304,16 +304,23 @@ PY
   fi
 done
 
-# 3. Write back coolify_app_ids to coolify.yaml
+# 3. Write back coolify_app_ids to coolify.yaml — targeted regex edit preserves comments.
+# yaml.safe_dump would strip every # CHANGE:/# LEAVE: guide comment on the first run.
 python3 - "$YAML_PATH" "${APP_UUIDS[staging]}" "${APP_UUIDS[production]}" <<'PY'
-import sys, yaml
+import sys, re
 path, staging_uuid, prod_uuid = sys.argv[1:4]
-with open(path) as f: d = yaml.safe_load(f)
-d.setdefault('coolify_app_ids', {})
-d['coolify_app_ids']['staging'] = staging_uuid
-d['coolify_app_ids']['production'] = prod_uuid
+with open(path) as f:
+    content = f.read()
+# Replace only the two UUID lines within the coolify_app_ids: block.
+# Pattern matches the block header then both environment lines in one pass so
+# surrounding comments and whitespace are left untouched.
+content = re.sub(
+    r'(?m)(^coolify_app_ids:\s*\n[ \t]+staging:)[ \t]*[^\n]*(\n[ \t]+production:)[ \t]*[^\n]*',
+    r'\1 ' + staging_uuid + r'\2 ' + prod_uuid,
+    content,
+)
 with open(path, 'w') as f:
-    yaml.safe_dump(d, f, sort_keys=False, default_flow_style=False)
+    f.write(content)
 PY
 echo "  WROTE back coolify_app_ids to $YAML_PATH"
 

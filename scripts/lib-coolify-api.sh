@@ -12,8 +12,14 @@ set -euo pipefail
 coolify_load_server() {
   local alias="$1"
   if [ ! -f "$COOLIFY_REGISTRY" ]; then
-    echo "ERROR: $COOLIFY_REGISTRY not found. Run /setup-coolify init first." >&2
+    echo "ERROR: $COOLIFY_REGISTRY not found. Run /setup-coolify init_cicd first." >&2
     return 1
+  fi
+  # Warn when coolify.json is group- or world-readable — it contains API keys.
+  local _perms
+  _perms=$(stat -c '%a' "$COOLIFY_REGISTRY" 2>/dev/null || stat -f '%A' "$COOLIFY_REGISTRY" 2>/dev/null || echo "")
+  if [ -n "$_perms" ] && [ "${_perms: -2}" != "00" ]; then
+    echo "WARN: $COOLIFY_REGISTRY is readable by group/others (permissions: $_perms). Fix with: chmod 0600 $COOLIFY_REGISTRY" >&2
   fi
   local exists
   exists=$(python3 - "$COOLIFY_REGISTRY" "$alias" <<'PY'
@@ -97,31 +103,35 @@ coolify_get_destination_uuid() {
   out=$(coolify_curl GET "/applications" 2>/dev/null || echo "")
   if [ -n "$out" ]; then
     local found
-    found=$(echo "$out" | python3 -c "
-import json,sys
-try: apps=json.load(sys.stdin)
+    found=$(echo "$out" | python3 - "$server_uuid" <<'PY'
+import json, sys
+server_uuid = sys.argv[1]
+try: apps = json.load(sys.stdin)
 except: sys.exit(0)
-if not isinstance(apps,list): sys.exit(0)
+if not isinstance(apps, list): sys.exit(0)
 for a in apps:
-    d=a.get('destination',{}) or {}
-    s=(d.get('server') or {})
-    if s.get('uuid')=='$server_uuid':
-        print(d.get('uuid','')); break
-" 2>/dev/null || echo "")
+    d = a.get('destination', {}) or {}
+    s = d.get('server') or {}
+    if s.get('uuid') == server_uuid:
+        print(d.get('uuid', '')); break
+PY
+2>/dev/null || echo "")
     [ -n "$found" ] && echo "$found" && return 0
   fi
   # Strategy 2 (fallback): GET /destinations (works on some Coolify versions)
   out=$(coolify_curl GET "/destinations" 2>/dev/null || echo "")
   if [ -n "$out" ]; then
-    echo "$out" | python3 -c "
-import json,sys
-try: d=json.load(sys.stdin)
+    echo "$out" | python3 - "$server_uuid" <<'PY'
+import json, sys
+server_uuid = sys.argv[1]
+try: d = json.load(sys.stdin)
 except: sys.exit(0)
-if isinstance(d,list):
+if isinstance(d, list):
     for x in d:
-        if x.get('server',{}).get('uuid')=='$server_uuid' or x.get('server_uuid')=='$server_uuid':
-            print(x.get('uuid','')); break
-" 2>/dev/null || true
+        if x.get('server', {}).get('uuid') == server_uuid or x.get('server_uuid') == server_uuid:
+            print(x.get('uuid', '')); break
+PY
+2>/dev/null || true
   fi
   # Strategy 3 (implicit): empty stdout — Coolify auto-assigns at create time
 }

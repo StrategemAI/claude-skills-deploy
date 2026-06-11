@@ -36,6 +36,8 @@ instance and Doppler account to use; all other config is repo-local.
 | `coolify_app_ids.staging` | string \| null | `~` | Coolify application UUID for staging. Written by `provision.sh` after the first successful run. Do not edit manually. |
 | `coolify_app_ids.production` | string \| null | `~` | Coolify application UUID for production. Written by `provision.sh` after the first successful run. Do not edit manually. |
 | `deploy_server` | string | _empty_ | Optional. Name of a Coolify-registered server to deploy apps on. When absent, apps deploy on the Coolify host (server_name from coolify.json, defaulting to `localhost`). Set this when staging/production should run on a separately-registered VPS rather than the Coolify host. Example: `my-app-vps`. |
+| `port` | int | `3000` | TCP port your container exposes. `provision.sh` uses this for Coolify's health-check port binding. Set this when your app listens on any port other than 3000. | `8080` |
+| `health_check_path` | string | `/api/health` | HTTP path polled by Coolify's health check and by the CI smoke test. Change this if your app exposes health at a different URL (e.g. `/healthz`, `/health`, `/`). | `/healthz` |
 
 ### Optional DNS block
 

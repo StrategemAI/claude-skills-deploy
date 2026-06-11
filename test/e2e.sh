@@ -1007,6 +1007,47 @@ else
   fail "production app status is '$PRD_STATUS' (expected 'running' or 'running:healthy')"
 fi
 
+# ── Step 11: HTTP smoke test — production ─────────────────────────────────────
+
+step "Step 11: HTTP smoke test — https://${PROD_DOMAIN} (timeout: ${SMOKE_TIMEOUT}s)"
+
+START_TS=$(date +%s)
+PRD_SMOKE_PASSED=false
+
+while true; do
+  ELAPSED=$(($(date +%s) - START_TS))
+
+  HEALTH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" \
+    --max-time 10 \
+    "https://${PROD_DOMAIN}/api/health" 2>/dev/null || echo "000")
+
+  echo "  [${ELAPSED}s] /api/health → HTTP $HEALTH_CODE"
+
+  if [ "$HEALTH_CODE" = "200" ]; then
+    BODY=$(curl -sf --max-time 10 "https://${PROD_DOMAIN}/" 2>/dev/null || echo "")
+    if echo "$BODY" | grep -q "claude-skills-deploy-e2e-ok"; then
+      PRD_SMOKE_PASSED=true
+      break
+    else
+      echo "  /api/health returned 200 but root page body check failed — retrying"
+    fi
+  fi
+
+  if (( ELAPSED > SMOKE_TIMEOUT )); then
+    echo "  smoke test timed out after ${SMOKE_TIMEOUT}s"
+    break
+  fi
+  sleep 10
+done
+
+if $PRD_SMOKE_PASSED; then
+  pass "smoke test: https://${PROD_DOMAIN}/api/health returned 200 + body check passed"
+else
+  fail "smoke test: could not reach https://${PROD_DOMAIN} within ${SMOKE_TIMEOUT}s"
+  echo "  This may be a Let's Encrypt cert delay. The deploy itself finished successfully."
+  echo "  Verify manually: curl https://${PROD_DOMAIN}/api/health"
+fi
+
 # ── Write test report ─────────────────────────────────────────────────────────
 
 step "Write test report"
@@ -1038,7 +1079,7 @@ echo ""
 echo "  DNS records created"
 echo "  ────────────────────────────────────────────────────────────────────────────"
 if [ ${#DNS_RECORDS[@]} -gt 0 ]; then
-  _vps="${VPS_IP:-149.248.4.46}"
+  _vps="${VPS_IP:-<unknown>}"
   _args=("$_vps")
   for entry in "${DNS_RECORDS[@]}"; do _args+=("$entry"); done
   python3 -c "

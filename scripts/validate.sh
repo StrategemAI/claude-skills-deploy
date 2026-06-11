@@ -79,22 +79,20 @@ echo "validate: server alias '$SERVER' -> $COOLIFY_URL (doppler account: $DOPPLE
 WARNINGS=0
 warn() { echo "WARN: $*" >&2; WARNINGS=$((WARNINGS+1)); }
 
-_server_field=$(python3 -c "
+_server_field=$(python3 - "$HOME/.claude/coolify.json" "$SERVER" <<'PY'
 import json, sys
-d = json.load(open('$HOME/.claude/coolify.json'))
-s = d.get('servers', {}).get('$SERVER', {})
+d = json.load(open(sys.argv[1]))
+s = d.get('servers', {}).get(sys.argv[2], {})
 missing = []
-# doppler_token: without it the CLI uses ambient auth and may hit the wrong workspace
 if not s.get('doppler_token'):
     missing.append('doppler_token')
-# cloudflare_api_token: required when dns.credential_source=coolify_json
 if not s.get('cloudflare_api_token'):
     missing.append('cloudflare_api_token')
-# dns_default: needed for E2E tests to exercise the DNS code path automatically
 if not s.get('dns_default'):
     missing.append('dns_default')
 print(' '.join(missing))
-" 2>/dev/null || echo "")
+PY
+2>/dev/null || echo "")
 
 if [ -n "$_server_field" ]; then
   for _f in $_server_field; do
@@ -209,7 +207,7 @@ fi
 # host causes a mid-run abort that leaves Coolify in a partially-provisioned state.
 EFFECTIVE_SSH_HOST="${DEPLOY_SSH_HOST_CHECK:-$SSH_HOST_CHECK}"
 if [ -n "$EFFECTIVE_SSH_HOST" ]; then
-  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+  if ! ssh -q -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
        "$EFFECTIVE_SSH_HOST" true 2>/dev/null; then
     fail "INVALID:ssh:$EFFECTIVE_SSH_HOST unreachable or authentication failed (check ~/.ssh/config, keys, and server firewall)"
   else
@@ -264,9 +262,11 @@ _fill_missing_from_env() {
       # Only fill if missing or empty in Doppler
       if ! doppler_check_key "$doppler_project" "$cfg" "$k" 2>/dev/null; then
         local v="${_env_vals[$k]}"
-        if doppler secrets set "${k}=${v}" \
-             --project "$doppler_project" --config "$cfg" \
-             >/dev/null 2>&1; then
+        # Pass via stdin (JSON) to avoid secret appearing in doppler's argv / ps output.
+        if python3 -c "import json,sys; sys.stdout.write(json.dumps({sys.argv[1]: sys.argv[2]}))" \
+               "$k" "$v" \
+             | doppler secrets upload --project "$doppler_project" --config "$cfg" - \
+               >/dev/null 2>&1; then
           echo "  validate: gap-filled $k → $doppler_project/$cfg (from $env_file)"
           filled=$((filled+1))
         else

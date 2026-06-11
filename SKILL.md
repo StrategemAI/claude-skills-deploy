@@ -30,7 +30,8 @@ Coolify receives **only `DOPPLER_TOKEN`** — a service token scoped to the matc
 The same Docker image is promoted from staging to production without a rebuild; the only thing that differs between the two app instances is the `DOPPLER_TOKEN` (scoped to the matching Doppler config). This means:
 - **Staging** gets a service token for the `stg` Doppler config → all staging secrets
 - **Production** gets a service token for the `prd` Doppler config → all production secrets
-- Secret values never appear in the Coolify UI, API responses, or logs
+- `DOPPLER_TOKEN` itself is stored in Coolify and is visible in the Coolify UI, API responses, and deployment logs. It is a scoped service token — an attacker who obtains it can read all secrets in the matching Doppler config. Protect it accordingly (rotate on exposure; `--rotate-tokens` flag in provision).
+- Actual secret values (DATABASE_URL, API keys, etc.) are never stored in or pass through Coolify. They flow directly from Doppler to the container at start time via `doppler run`.
 
 The `# build_time: true` trailing-comment annotation in `coolify.yaml` is
 **reserved for a future per-env build mode** and is NOT currently parsed by

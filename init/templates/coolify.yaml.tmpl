@@ -80,6 +80,17 @@ dns:
   # Leave empty when provider is 'none'.
   credential_key: {{DNS_CREDENTIAL_KEY}}
 
+# Optional: application port exposed by your container (default: 3000).
+# CHANGE this when your app listens on a different port — provision.sh uses it for
+# health checks and the Coolify port binding. Leave commented out for port 3000 apps.
+# port: 3000
+
+# Optional: HTTP path used for health checks (default: /api/health).
+# CHANGE this if your app exposes health at a different URL (e.g. /healthz, /health).
+# Provision wires Coolify's health-check probe to this path; the CI smoke test also
+# curls this path. Leave commented out to keep the default.
+# health_check_path: /api/health
+
 # CHANGE: list every environment variable your app reads (e.g. DATABASE_URL).
 # These must exist in BOTH the stg and prd Doppler configs.
 # They are injected at container start — NOT baked into the image.
